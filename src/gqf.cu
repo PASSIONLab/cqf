@@ -1733,6 +1733,9 @@ bool qf_malloc(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t
 
 	uint64_t init_size = qf_init(qf, nslots, key_bits, value_bits, hash, seed,
 															 buffer, total_num_bytes);
+	void* d_buffer;
+	CUDA_CHECK(cudaMalloc((void**)(d_buffer, total_num_bytes)));
+	CUDA_CHECK(cudaMemcpy(d_buffer, buffer, total_num_bytes, cudaMemcpyHostToDevice));
 
 	if (init_size == total_num_bytes)
 		return true;
@@ -1927,28 +1930,59 @@ int qf_insert(QF *qf, uint64_t key, uint64_t value, uint64_t count, uint8_t
 	return ret;
 }
 
-void qf_insert_gpu(QF* qf, uint64_t* keys, uint64_t value, uint64_t count, uint64_t nvals, uint64_t nslots, uint8_t
-	flags) {
-	int num_threads = 4;
-	uint32_t* blockends;
-	int t_start;
-	int t_end;
-	blockends = (uint32_t*)malloc(num_threads * sizeof(blockends[0]));
-	for (int i = 0; i < num_threads; i++) {
-		blockends[i] = (nvals / num_threads) * (i + 1);
+__host__ __device__ size_t calcNumBlocksGPU(unsigned int q)
+{
+        return (((1 << q) + (SLOTS_PER_BLOCK - 1)) / SLOTS_PER_BLOCK) + 1;
+}
+__device__ void hash_values(uint64_t* d_keys, QF* qf, uint64_t nvals, uint8_t flags){
+	size_t idx = threadIdx.x + blockIdx.x * blockDim.x + blockIdx.y * gridDim.x * blockDim.x;
+	if (idx > nvals){
+		return;
 	}
-	for (int tid = 0; tid < 4; tid++) {
-		if (tid == 0) {
-			t_start = 0;
-		}
-		else t_start = blockends[tid - 1];
-		if (tid == num_threads - 1) t_end = nvals;
-		else t_end = blockends[tid];
+	int num_threads = gridDim.x*blockDim.x;
+	for (int i = idx; i<nvals; i+=num_threads){
+	uint64_t key = keys[i];
+		if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
+				if (qf->metadata->hash_mode == QF_HASH_DEFAULT)
+					key = MurmurHash64A(((void*)&key), sizeof(key), qf->metadata->seed) % qf->metadata->range;
+				else if (qf->metadata->hash_mode == QF_HASH_INVERTIBLE)
+					key = hash_64(key, BITMASK(qf->metadata->key_bits));
+			}
+			*/
+			uint64_t hash = (key << qf->metadata->value_bits) | (value & BITMASK(qf->metadata->value_bits));
+	}
 
-		for (int i = t_start; i < t_end; i++) {
+}
+__host__ void qf_insert_gpu(QF* qf, uint64_t* d_keys, uint64_t value, uint64_t count, uint64_t nvals, uint64_t nslots, uint8_t
+	flags) {
+
+
+
+		uint64_t nblocks = qf->metadata->nblocks;
+
+		unsigned int* d_blockStarts;
+		CUDA_CHECK(cudaMalloc((void**) &d_blockStarts, nblocks * sizeof(uint64_t)));
+		cudaMemset(d_blockStarts, 0xFF, nblocks * sizeof(uint64_t));
+
+		//timing goo
+		cudaEvent_t start, stop;
+		cudaEventCreate(&start);
+		cudaEventCreate(&stop);
+		cudaEventRecord(start);
+
+		//hash
+		int blocksize = 1024;
+		int num_blocks =  (nvals+blocksize-1) / blocksize;;
+		hash<<<num_blocks, blocksize>>>(d_keys, qf, nvals, flags);
+		//sort
+		thrust::sort(d_keys.begin(), d_keys.end());
+
+		//Might remove this later
+		for (int i = 0; i < nvals; i++) {
 			uint64_t key = keys[i];
 
 			//Don't worry about resizing the CQF; it should be set big enough before the start
+			*/
 			if (qf_get_num_occupied_slots(qf) >= qf->metadata->nslots * 0.95) {
 				if (qf->runtimedata->auto_resize) {
 					if (qf->runtimedata->container_resize(qf, qf->metadata->nslots * 2) < 0)
@@ -1960,7 +1994,7 @@ void qf_insert_gpu(QF* qf, uint64_t* keys, uint64_t value, uint64_t count, uint6
 				else
 					return;
 			}
-
+			*/
 			if (count == 0)
 				return;
 			/*
@@ -2007,7 +2041,7 @@ void qf_insert_gpu(QF* qf, uint64_t* keys, uint64_t value, uint64_t count, uint6
 					ret = QF_NO_SPACE;
 				}
 			}
-		}
+		
 	}
 }
 int qf_set_count(QF *qf, uint64_t key, uint64_t value, uint64_t count, uint8_t
