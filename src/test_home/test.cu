@@ -103,6 +103,7 @@ static inline uint64_t find_thread_last_slot(QF* qf, int num_threads, int tid, u
 	//printf("FINDING_SLOT: tid %d maxquot %lu tquot %lu slot per quotient %lu last_slot %lu\n",tid, max_quotient, thread_quotient, slot_per_quot, last_slot);
 	return last_slot;
 }
+
 static inline void printarray(uint64_t* arr, uint64_t len) {
 	for (int i = 0; i < len; i++) {
 		printf("%lu,  ", arr[i]);
