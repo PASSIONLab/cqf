@@ -118,6 +118,7 @@ extern "C" {
 
 	typedef quotient_filter QF;
 
+
 #if QF_BITS_PER_SLOT > 0
   static inline qfblock * get_block(const QF *qf, uint64_t block_index)
   {

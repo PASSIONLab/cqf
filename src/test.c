@@ -17,7 +17,6 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <unistd.h>
-#include <openssl/rand.h>
 
 #include "include/gqf.h"
 #include "include/gqf_int.h"
@@ -40,9 +39,8 @@ int main(int argc, char **argv)
 	uint64_t nslots = (1ULL << qbits);
 	//this can be changed to change the % it fills up
 	uint64_t nvals = 95*nslots/100;
-	uint64_t key_count = 4;
+	uint64_t key_count = 1;
 	uint64_t *vals;
-	uint64_t* hashes;
 
 	/* Initialise the CQF */
 	/*if (!qf_malloc(&qf, nslots, nhashbits, 0, QF_HASH_INVERTIBLE, 0)) {*/
@@ -58,10 +56,13 @@ int main(int argc, char **argv)
 	qf_set_auto_resize(&qf, true);
 	/* Generate random values */
 	vals = (uint64_t*)malloc(nvals*sizeof(vals[0]));
-	hashes = (uint64_t*)malloc(nvals * sizeof(hashes[0]));
-	RAND_bytes((unsigned char *)vals, sizeof(*vals) * nvals);
+	//RAND_bytes((unsigned char *)vals, sizeof(*vals) * nvals);
+
 	srand(0);
 	//pre-hash everything
+	for (int i = 0; i < nvals; i++) {
+		vals[i] = rand();
+	}
 	for (uint64_t i = 0; i < nvals; i++) {
 		vals[i] = (1 * vals[i]) % qf.metadata->range;
 		vals[i] = hash_64(vals[i], BITMASK(nhashbits));
