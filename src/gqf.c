@@ -57,6 +57,21 @@
 #define DEBUG_DUMP(qf) \
 	do { if (PRINT_DEBUG) qf_dump_metadata(qf); } while (0)
 
+#if QF_BITS_PER_SLOT > 0
+static inline qfblock* get_block(const QF * qf, uint64_t block_index)
+{
+	return &qf->blocks[block_index];
+}
+#else
+static inline qfblock* get_block(const QF * qf, uint64_t block_index)
+{
+	return (qfblock*)(((char*)qf->blocks)
+		+ block_index * (sizeof(qfblock) + QF_SLOTS_PER_BLOCK *
+			qf->metadata->bits_per_slot / 8));
+}
+#endif
+
+
 static __inline__ unsigned long long rdtsc(void)
 {
 	unsigned hi, lo;
