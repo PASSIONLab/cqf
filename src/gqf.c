@@ -71,15 +71,16 @@ static inline qfblock* get_block(const QF * qf, uint64_t block_index)
 }
 #endif
 
-
+/*
 static __inline__ unsigned long long rdtsc(void)
 {
 	unsigned hi, lo;
 	__asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
 	return ( (unsigned long long)lo)|( ((unsigned long long)hi)<<32 );
 }
-
-#ifdef LOG_WAIT_TIME
+*/
+//#ifdef LOG_WAIT_TIME
+/*
 static inline bool qf_spin_lock(QF *qf, volatile int *lock, uint64_t idx,
 																uint8_t flag)
 {
@@ -91,9 +92,7 @@ static inline bool qf_spin_lock(QF *qf, volatile int *lock, uint64_t idx,
 		ret = !__sync_lock_test_and_set(lock, 1);
 		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
 		qf->runtimedata->wait_times[idx].locks_acquired_single_attempt++;
-		qf->runtimedata->wait_times[idx].total_time_single += BILLION * (end.tv_sec -
-																												start.tv_sec) +
-			end.tv_nsec - start.tv_nsec;
+		qf->runtimedata->wait_times[idx].total_time_single += BILLION * (end.tv_sec -start.tv_sec) +end.tv_nsec - start.tv_nsec;
 	} else {
 		if (!__sync_lock_test_and_set(lock, 1)) {
 			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
@@ -114,7 +113,7 @@ static inline bool qf_spin_lock(QF *qf, volatile int *lock, uint64_t idx,
 	qf->runtimedata->wait_times[idx].locks_taken++;
 
 	return ret;
-
+	*/
 	/*start = rdtsc();*/
 	/*if (!__sync_lock_test_and_set(lock, 1)) {*/
 		/*clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);*/
@@ -132,12 +131,13 @@ static inline bool qf_spin_lock(QF *qf, volatile int *lock, uint64_t idx,
 	/*end = rdtsc();*/
 	/*qf->runtimedata->wait_times[idx].locks_taken++;*/
 	/*return;*/
-}
-#else
+//}
+//#else
 /**
  * Try to acquire a lock once and return even if the lock is busy.
  * If spin flag is set, then spin until the lock is available.
  */
+/*
 static inline bool qf_spin_lock(volatile int *lock, uint8_t flag)
 {
 	if (GET_WAIT_FOR_LOCK(flag) != QF_WAIT_FOR_LOCK) {
@@ -257,7 +257,7 @@ static void qf_unlock(QF *qf, uint64_t hash_bucket_index, bool small)
 			qf_spin_unlock(&qf->runtimedata->locks[hash_bucket_index/NUM_SLOTS_TO_LOCK-1]);
 	}
 }
-
+*/
 /*static void modify_metadata(QF *qf, uint64_t *metadata, int cnt)*/
 /*{*/
 /*#ifdef LOG_WAIT_TIME*/
@@ -1415,11 +1415,11 @@ static inline int insert1(QF *qf, __uint64_t hash, uint8_t runtime_lock)
 		METADATA_WORD(qf, occupieds, hash_bucket_index) |= 1ULL <<
 			(hash_bucket_block_offset % 64);
 	}
-
+	/*
 	if (GET_NO_LOCK(runtime_lock) != QF_NO_LOCK) {
-		qf_unlock(qf, hash_bucket_index, /*small*/ true);
+		qf_unlock(qf, hash_bucket_index,  true); //true is small
 	}
-
+	*/
 	return ret_distance;
 }
 
@@ -1540,11 +1540,12 @@ inline static int _remove(QF *qf, __uint64_t hash, uint64_t count, uint8_t
 	uint64_t current_remainder, current_count, current_end;
 	uint64_t new_values[67];
 
+	/*
 	if (GET_NO_LOCK(runtime_lock) != QF_NO_LOCK) {
-		if (!qf_lock(qf, hash_bucket_index, /*small*/ false, runtime_lock))
+		if (!qf_lock(qf, hash_bucket_index, false, runtime_lock))//false is small
 			return -2;
 	}
-
+	*/
 	/* Empty bucket */
 	if (!is_occupied(qf, hash_bucket_index))
 		return -1;
@@ -1581,10 +1582,11 @@ inline static int _remove(QF *qf, __uint64_t hash, uint64_t count, uint8_t
 	// update the nelements.
 	modify_metadata(&qf->runtimedata->pc_nelts, -count);
 	/*qf->metadata->nelts -= count;*/
-
+	/*
 	if (GET_NO_LOCK(runtime_lock) != QF_NO_LOCK) {
-		qf_unlock(qf, hash_bucket_index, /*small*/ false);
+		qf_unlock(qf, hash_bucket_index, false);
 	}
+	*/
 
 	return ret_numfreedslots;
 }
