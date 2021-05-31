@@ -1186,7 +1186,7 @@ static inline uint64_t next_slot(QF *qf, uint64_t current)
 	return current;
 }
 
-static inline int insert1(QF *qf, __uint128_t hash, uint8_t runtime_lock)
+static inline int insert1(QF *qf, __uint64_t hash, uint8_t runtime_lock)
 {
 	int ret_distance = 0;
 	uint64_t hash_remainder           = hash & BITMASK(qf->metadata->bits_per_slot);
@@ -1423,7 +1423,7 @@ static inline int insert1(QF *qf, __uint128_t hash, uint8_t runtime_lock)
 	return ret_distance;
 }
 
-static inline int insert(QF *qf, __uint128_t hash, uint64_t count, uint8_t
+static inline int insert(QF *qf, __uint64_t hash, uint64_t count, uint8_t
 												 runtime_lock)
 {
 	int ret_distance = 0;
@@ -1531,7 +1531,7 @@ static inline int insert(QF *qf, __uint128_t hash, uint64_t count, uint8_t
 	return ret_distance;
 }
 
-inline static int _remove(QF *qf, __uint128_t hash, uint64_t count, uint8_t
+inline static int _remove(QF *qf, __uint64_t hash, uint64_t count, uint8_t
 													runtime_lock)
 {
 	int ret_numfreedslots = 0;
@@ -2186,7 +2186,7 @@ enum qf_hashmode qf_get_hashmode(const QF *qf) {
 uint64_t qf_get_hash_seed(const QF *qf) {
 	return qf->metadata->seed;
 }
-__uint128_t qf_get_hash_range(const QF *qf) {
+__uint64_t qf_get_hash_range(const QF *qf) {
 	return qf->metadata->range;
 }
 
