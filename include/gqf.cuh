@@ -165,6 +165,12 @@ extern "C" {
 
 
 
+	//Atomic free code
+	__host__ void bulk_insert_no_atomics(QF* qf, uint64_t* keys, uint64_t value, uint64_t count, uint64_t nvals, uint64_t slots_per_lock, uint64_t num_locks, uint8_t flags, uint64_t ** buffers, volatile uint64_t * buffer_sizes);
+	__host__ void free_buffers_nobacking(QF *qf, uint64_t**buffers, volatile uint64_t*buffer_sizes, uint64_t num_buffers);
+
+
+
 	__host__ uint64_t bulk_get_wrapper(QF * qf, uint64_t * vals, uint64_t nvals);
 	/* Set the counter for this key/value pair to count. 
 	 Return value: Same as qf_insert. 

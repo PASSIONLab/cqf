@@ -84,7 +84,8 @@ extern inline int gqf_init(uint64_t nbits, uint64_t num_hash_bits, uint64_t buf_
 
 	cudaMalloc((void **)&buffers, 20*num_locks*sizeof(uint64_t*));
 
-	cudaMalloc((void **)& buffer_backing, buf_size*sizeof(uint64_t));
+	//sorting version doesn't require backign
+	//cudaMalloc((void **)& buffer_backing, buf_size*sizeof(uint64_t));
 
 
 	return 0;
@@ -148,7 +149,7 @@ extern inline uint64_t gqf_xnslots()
 extern inline int gqf_destroy()
 {
 	//fix me this isn't going to work
-	free_buffers_premalloced(g_quotient_filter, buffers, buffer_backing, buffer_sizes, num_locks);
+	free_buffers_nobacking(g_quotient_filter, buffers, buffer_sizes, num_locks);
 	qf_free_gpu(g_quotient_filter);
 	
 
@@ -193,12 +194,12 @@ extern inline int gqf_bulk_insert(uint64_t * vals, uint64_t count)
 	//if (ratio > 15) ratio = 15;
 	//printf("Dividing ratio %d\n", ratio);
 
-	cudaMemset((uint64_t *) buffer_sizes, 0, num_locks*sizeof(uint64_t));
+	//cudaMemset((uint64_t *) buffer_sizes, 0, num_locks*sizeof(uint64_t));
 	
   //cudaMemset((uint64_t *) buffer_sizes, 0, ratio*num_locks*sizeof(uint64_t));
 	//bulk_insert_bucketing_buffer_provided(g_quotient_filter, vals, 0, 1, count, NUM_SLOTS_TO_LOCK, num_locks, QF_NO_LOCK, buffers, buffer_backing, buffer_sizes);
 	//bulk_insert_one_hash(g_quotient_filter, vals, 0, 1, count, NUM_SLOTS_TO_LOCK/ratio, num_locks*ratio, QF_NO_LOCK, buffers, buffer_backing, buffer_sizes);
-  bulk_insert_bucketing_buffer_provided_timed(g_quotient_filter, vals, 0, 1, count, NUM_SLOTS_TO_LOCK, num_locks, QF_NO_LOCK, buffers, buffer_backing, buffer_sizes);
+  bulk_insert_no_atomics(g_quotient_filter, vals, 0, 1, count, NUM_SLOTS_TO_LOCK, num_locks, QF_NO_LOCK, buffers, buffer_sizes);
 	
 	cudaDeviceSynchronize();
 	return 0;
