@@ -2801,6 +2801,9 @@ __global__ void insert_from_buffers_timed(QF* qf, uint64_t num_buffers, uint64_t
 
 }
 
+
+__device__ char insert_kmer(uint64_t[] kmer, )
+
 __global__ void insert_from_buffers_utilization(QF* qf, uint64_t num_buffers, uint64_t** buffers, volatile uint64_t * buffer_counts, uint64_t evenness, uint64_t * insert_cycles, uint64_t * fence_cycles, uint64_t * sort_cycles){
 
 

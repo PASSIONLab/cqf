@@ -7,8 +7,8 @@
  * ============================================================================
  */
 
-#ifndef GQF_WRAPPER_CUH
-#define GQF_WRAPPER_CUH
+#ifndef GQF_MHM_WRAPPER_CUH
+#define GQF_MHM_WRAPPER_CUH
 
 #define INSERT_VERSION_BULK
 
@@ -17,6 +17,27 @@
 #include "gqf.cuh"
 #include "gqf_int.cuh"
 #include "gqf_file.cuh"
+
+
+template <typename T>
+class ApproxFilter{
+
+
+	ApproxFilter(uint64_t nbits);
+
+
+	//assume item always is succesfully inserted
+	//silently fail if not?
+	void insert(T item_to_insert);
+
+	get(T item_to_find);
+
+private:
+
+	QF* qf;
+	uint16_t * locks;
+
+}
 
 QF* g_quotient_filter;
 QFi g_quotient_filter_itr;
@@ -27,10 +48,6 @@ volatile uint64_t * buffer_sizes;
 
 uint64_t num_slots;
 uint64_t total_items;
-	
-uint64_t ** buffers;
-	
-uint64_t * buffer_backing;
 
 
 #ifndef NUM_SLOTS_TO_LOCK
@@ -39,7 +56,7 @@ uint64_t * buffer_backing;
 
 extern inline uint64_t gqf_xnslots();
 
-extern inline int gqf_init(uint64_t nbits, uint64_t num_hash_bits, uint64_t buf_size)
+extern inline int gqf_init(QF* qf, uint64_t nbits, uint64_t num_hash_bits)
 {
 
 	//seems that we need to fix something here
@@ -79,13 +96,7 @@ extern inline int gqf_init(uint64_t nbits, uint64_t num_hash_bits, uint64_t buf_
 
 	num_locks = gqf_xnslots()/NUM_SLOTS_TO_LOCK+10;
 
-	cudaMalloc((void **) & buffer_sizes, 20*num_locks*sizeof(uint64_t));
-	
-
-	cudaMalloc((void **)&buffers, 20*num_locks*sizeof(uint64_t*));
-
-	cudaMalloc((void **)& buffer_backing, buf_size*sizeof(uint64_t));
-
+	cudaMalloc((void **)& locks)
 
 	return 0;
 }
