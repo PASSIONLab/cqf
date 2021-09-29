@@ -27,7 +27,14 @@ extern "C" {
    8, 16, 32, or 64 (for optimized versions),
    or other integer <= 56 (for compile-time-optimized bit-shifting-based versions)
 */
-#define QF_BITS_PER_SLOT 8
+
+
+//move #define to gqf.cu
+#define QF_BITS_PER_REMAINDER 10
+#define QF_BITS_PER_VALUE 6
+
+
+#define QF_BITS_PER_SLOT 16
 
 /* Must be >= 6.  6 seems fastest. */
 #define QF_BLOCK_OFFSET_BITS (6)
@@ -82,7 +89,7 @@ extern "C" {
 		pc_t pc_noccupied_slots;
 		uint64_t num_locks;
 		volatile int metadata_lock;
-		volatile int *locks;
+		uint16_t *locks;
 		wait_time_data *wait_times;
 	} quotient_filter_runtime_data;
 

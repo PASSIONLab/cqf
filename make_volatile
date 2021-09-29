@@ -1,7 +1,0 @@
-mkdir obj
-nvcc -dc -x cu  -arch=sm_70 -rdc=true -I. -Iinclude  -dc src/test.cu -o obj/test.o -Xptxas -dlcm=cg
-nvcc -dc -x cu  -arch=sm_70 -rdc=true -I. -Iinclude  -dc src/gqf.cu -o obj/gqf.o -Xptxas -dlcm=cg
-nvcc -dc -x cu  -arch=sm_70 -rdc=true -I. -Iinclude  -dc src/gqf_file.cu -o obj/gqf_file.o -Xptxas -dlcm=cg
-nvcc -dc -x cu  -arch=sm_70 -rdc=true -I. -Iinclude  -dc src/hashutil.cu -o obj/hashutil.o -Xptxas -dlcm=cg
-nvcc -dc -x cu  -arch=sm_70 -rdc=true -I. -Iinclude  -dc src/partitioned_counter.cu -o obj/partitioned_counter.o -Xptxas -dlcm=cg
-nvcc obj/test.o obj/gqf.o obj/gqf_file.o obj/hashutil.o obj/partitioned_counter.o -o test   -O3 -L/usr/common/software/sles15_cgpu/cuda/11.1.1/lib64/compat -L/usr/common/software/sles15_cgpu/cuda/11.1.1/lib64 -L/usr/common/software/sles15_cgpu/cuda/11.1.1/extras/CUPTI/lib6 -arch=sm_70 -lpthread -lssl -lcrypto -lm -lcuda -lcudart -Xptxas -dlcm=cg

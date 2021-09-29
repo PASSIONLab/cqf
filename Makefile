@@ -1,4 +1,4 @@
-TARGETS=test bm_gpu_only
+TARGETS=approx_test
 
 ifdef D
 	DEBUG=-g -G
@@ -51,6 +51,10 @@ test:								$(OBJDIR)/test.o $(OBJDIR)/gqf.o $(OBJDIR)/gqf_file.o \
 										$(OBJDIR)/hashutil.o \
 										$(OBJDIR)/partitioned_counter.o
 
+approx_test:						$(OBJDIR)/approx_test.o $(OBJDIR)/gqf.o $(OBJDIR)/gqf_file.o \
+										$(OBJDIR)/hashutil.o \
+										$(OBJDIR)/partitioned_counter.o
+
 test_threadsafe:		$(OBJDIR)/test_threadsafe.o $(OBJDIR)/gqf.o \
 										$(OBJDIR)/gqf_file.o $(OBJDIR)/hashutil.o \
 										$(OBJDIR)/partitioned_counter.o
@@ -70,6 +74,10 @@ bm_gpu_only:							$(OBJDIR)/bm_gpu_only.o $(OBJDIR)/gqf.o $(OBJDIR)/gqf_file.o 
 # dependencies between .o files and .h files
 
 $(OBJDIR)/test.o: 						$(LOC_INCLUDE)/gqf.cuh $(LOC_INCLUDE)/gqf_file.cuh \
+															$(LOC_INCLUDE)/hashutil.cuh \
+															$(LOC_INCLUDE)/partitioned_counter.cuh
+
+$(OBJDIR)/approx_test.o: 						$(LOC_INCLUDE)/gqf.cuh $(LOC_INCLUDE)/gqf_file.cuh \
 															$(LOC_INCLUDE)/hashutil.cuh \
 															$(LOC_INCLUDE)/partitioned_counter.cuh
 

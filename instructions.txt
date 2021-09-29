@@ -1,5 +1,0 @@
-//sample run:
-bsub -nnodes 1 -P BIF115 -W 0:30 -Is $SHELL -l
-
-jsrun --smpiargs="off" -n 1 -g 1 ./test 28
-

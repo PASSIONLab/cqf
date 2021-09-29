@@ -147,8 +147,8 @@ uint64_t qf_usefile(QF* qf, const char* filename, int flag)
 	qf->runtimedata->container_resize = qf_resize_file;
 	/* initialize all the locks to 0 */
 	qf->runtimedata->metadata_lock = 0;
-	qf->runtimedata->locks = (volatile int *)calloc(qf->runtimedata->num_locks,
-																					sizeof(volatile int));
+	qf->runtimedata->locks = (uint16_t *)calloc(qf->runtimedata->num_locks,
+																					sizeof(uint16_t));
 	if (qf->runtimedata->locks == NULL) {
 		perror("Couldn't allocate memory for runtime locks.");
 		exit(EXIT_FAILURE);
@@ -329,8 +329,8 @@ uint64_t qf_deserialize(QF *qf, const char *filename)
 	qf->runtimedata->num_locks = (qf->metadata->xnslots/NUM_SLOTS_TO_LOCK)+2;
 	qf->runtimedata->metadata_lock = 0;
 	/* initialize all the locks to 0 */
-	qf->runtimedata->locks = (volatile int *)calloc(qf->runtimedata->num_locks,
-																									sizeof(volatile int));
+	qf->runtimedata->locks = (uint16_t *)calloc(qf->runtimedata->num_locks,
+																									sizeof(uint16_t));
 	if (qf->runtimedata->locks == NULL) {
 		perror("Couldn't allocate memory for runtime locks.");
 		exit(EXIT_FAILURE);

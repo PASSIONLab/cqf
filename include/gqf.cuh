@@ -207,6 +207,11 @@ extern "C" {
 	/* batch inserts using GPU*/
 	__host__ void  qf_gpu_launch(QF* qf, uint64_t* vals, uint64_t nvals, uint64_t key_count, uint64_t nhashbits, uint64_t nslots);
 
+	
+
+	__global__ void insert_one_kmer_kernel(QF* qf, uint64_t hash, uint8_t val, uint16_t * locks);
+
+
 	/****************************************
    Query functions
 	****************************************/
@@ -354,6 +359,43 @@ extern "C" {
 
 	void qf_dump(const QF *);
 	void qf_dump_metadata(const QF *qf);
+
+
+	//TEMPORARILY EXPOSED FOR DEBUGGING
+
+
+	//FUNCTIONS FOR MHM2
+
+
+	//construct a filter, takes in the address of a pointer
+	__host__ void qf_malloc_device(QF** qf, int nbits);
+
+
+	//device_funcs for interacting with the filter
+	__device__ bool insert_kmer(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback);
+
+
+	//destroys a filter
+	__host__ void qf_destroy_device(QF * qf);
+
+
+
+
+	__host__ __device__ uint8_t encode_kmer_counter(uint8_t* counter);
+	__host__ __device__ void decode_kmer_counter(uint8_t * counter, uint8_t stored);
+
+	__host__ __device__ bool is_encodable(uint8_t* counter);
+	//__global__ void insert_multi_kmer_kernel_first(QF* qf, uint16_t * locks, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems);
+	__global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems, uint64_t * counter);
+
+	
+
+	__host__ uint64_t qf_estimate_memory(int nbits);
+
+	//get mem usage from dev side QF
+	
+	//__host__ uint64_t get_current_usage(QF* qf);
+
 
 #ifdef __cplusplus
 }
