@@ -1337,6 +1337,16 @@ __host__ __device__ static inline int insert1(QF *qf, __uint64_t hash, uint8_t r
 	*/
   //printf("In insert1, Index is %llu, block_offset is %llu, remainder is %llu \n", hash_bucket_index, hash_bucket_block_offset, hash_remainder);
 
+
+	//approx filter has estimate of only one insert per item
+
+	#ifdef __CUDA_ARCH__
+		atomicAdd((unsigned long long *)&qf->metadata->noccupied_slots,  1ULL);
+	#else
+		abort();
+	#endif
+
+
 	if (is_empty(qf, hash_bucket_index) /* might_be_empty(qf, hash_bucket_index) && runend_index == hash_bucket_index */) {
 		METADATA_WORD(qf, runends, hash_bucket_index) |= 1ULL <<
 			(hash_bucket_block_offset % 64);
@@ -1346,6 +1356,8 @@ __host__ __device__ static inline int insert1(QF *qf, __uint64_t hash, uint8_t r
 
 		ret_distance = 0;
 		//modify_metadata(&qf->runtimedata->pc_ndistinct_elts, 1);
+
+
 		//modify_metadata(&qf->runtimedata->pc_noccupied_slots, 1);
 		//modify_metadata(&qf->runtimedata->pc_nelts, 1);
 	} else {
@@ -3008,7 +3020,8 @@ __global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * fi
 	char fwd;
 	char back;
 
-	if (!insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back)){
+	//_not_exists
+	if (!insert_kmer(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back)){
 
 
 		atomicAdd((unsigned long long *) counter, (unsigned long long) 1);
@@ -3224,28 +3237,43 @@ uint64_t qf_get_num_occupied_slots(const QF *qf) {
 }
 
 
+//need to pull metadata from qf, and nslots from metadata
 __host__ uint64_t host_qf_get_nslots(const QF *qf) {
 
-	qfmetadata* _metadata;
-	cudaMallocHost((void **)&_metadata, sizeof(qfmetadata));
+	QF * host_qf;
 
-	cudaMemcpy (_metadata, qf->metadata, sizeof(qfmetadata), cudaMemcpyDeviceToHost);
+	CUDA_CHECK(cudaMallocHost((void **)&host_qf, sizeof(QF)));
+
+	CUDA_CHECK(cudaMemcpy(host_qf, qf, sizeof(QF), cudaMemcpyDeviceToHost));
+
+	qfmetadata* _metadata;
+	CUDA_CHECK(cudaMallocHost((void **)&_metadata, sizeof(qfmetadata)));
+
+	CUDA_CHECK(cudaMemcpy (_metadata, host_qf->metadata, sizeof(qfmetadata), cudaMemcpyDeviceToHost));
 
 	uint64_t toReturn = _metadata->nslots;
-	cudaFreeHost(_metadata);
+	CUDA_CHECK(cudaFreeHost(_metadata));
+	CUDA_CHECK(cudaFreeHost(host_qf));
 
 	return toReturn;
 }
 
 __host__ uint64_t host_qf_get_num_occupied_slots(const QF *qf) {
 	
-		qfmetadata* _metadata;
-		cudaMallocHost((void **)&_metadata, sizeof(qfmetadata));
+		QF* host_qf;
 
-		cudaMemcpy (_metadata, qf->metadata, sizeof(qfmetadata), cudaMemcpyDeviceToHost);
+	  CUDA_CHECK(cudaMallocHost((void **)&host_qf, sizeof(QF)));
+
+	  CUDA_CHECK(cudaMemcpy(host_qf, qf, sizeof(QF), cudaMemcpyDeviceToHost));
+
+		qfmetadata* _metadata;
+		CUDA_CHECK(cudaMallocHost((void **)&_metadata, sizeof(qfmetadata)));
+
+		CUDA_CHECK(cudaMemcpy (_metadata, host_qf->metadata, sizeof(qfmetadata), cudaMemcpyDeviceToHost));
 
 		uint64_t toReturn = _metadata->noccupied_slots;
-		cudaFreeHost(_metadata);
+		CUDA_CHECK(cudaFreeHost(_metadata));
+		CUDA_CHECK(cudaFreeHost(host_qf));
 
 		return toReturn;
 }

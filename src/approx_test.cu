@@ -179,6 +179,15 @@ int main(int argc, char** argv) {
  	printf("Positive rate for first round: %llu/%llu: %f\n", counter1[0], nvals, 1.0*counter1[0]/nvals);
  	printf("Positive rate for second round: %llu/%llu: %f\n", counter2[0], nvals, 1.0*counter2[0]/nvals);
 
+
+ 	uint64_t found_nslots = host_qf_get_nslots(qf);
+
+ 	cudaDeviceSynchronize();
+ 	printf("survided\n");
+	uint64_t occupied = host_qf_get_num_occupied_slots(qf);
+
+ 	printf("Fill ratio: %f %llu %llu\n", 1.0*occupied/found_nslots, occupied, found_nslots);
+
  	cudaFree(counter1);
  	cudaFree(counter2);
 
