@@ -392,6 +392,11 @@ extern "C" {
 
 	__host__ uint64_t qf_estimate_memory(int nbits);
 
+	__host__ uint64_t host_qf_get_nslots(const QF *qf);
+	__host__ uint64_t host_qf_get_num_occupied_slots(const QF *qf);
+
+
+
 	//get mem usage from dev side QF
 	
 	//__host__ uint64_t get_current_usage(QF* qf);
