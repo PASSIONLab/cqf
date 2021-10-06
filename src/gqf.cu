@@ -47,7 +47,7 @@
 #define MAX_VALUE(nbits) ((1ULL << (nbits)) - 1)
 #define BITMASK(nbits)                                    \
   ((nbits) == 64 ? 0xffffffffffffffff : MAX_VALUE(nbits))
-#define NUM_SLOTS_TO_LOCK (1ULL<<13)
+#define NUM_SLOTS_TO_LOCK (1ULL<<14)
 #define EXP_BEFORE_FAILURE -15
 #define CLUSTER_SIZE (1ULL<<14)
 #define METADATA_WORD(qf,field,slot_index)                              \
@@ -611,6 +611,10 @@ __host__ __device__ static inline uint64_t block_offset(const QF *qf, uint64_t b
 			get_block(qf, blockidx)->offset < BITMASK(8*sizeof(qf->blocks[0].offset)))
 		return get_block(qf, blockidx)->offset;
 
+
+	//assert(blockidx != 0);
+	//return 0;
+	//RECURSION
 	return run_end(qf, QF_SLOTS_PER_BLOCK * blockidx - 1) - QF_SLOTS_PER_BLOCK *
 		blockidx + 1;
 }
@@ -729,29 +733,6 @@ __device__ static inline int probably_is_empty(const QF *qf, uint64_t slot_index
 		&& !is_runend(qf, slot_index);
 }
 
-
-__host__ __device__ static inline uint64_t find_first_empty_slot_verbose(QF *qf, uint64_t from)
-{
-
-	printf("Starting find first - this will terminate in -1\n");
-	qf_dump_block(qf, from/QF_SLOTS_PER_BLOCK);
-	do {
-		int t = offset_lower_bound_verbose(qf, from);
-    //get block of from
-
-    if (t < 0){
-    	
-      printf("Finding first empty slot. T: %d, from: %llu\n - block %llu", t, from, from/QF_SLOTS_PER_BLOCK);
-      qf_dump(qf);
-    }
-		assert(t>=0);
-		if (t == 0)
-			break;
-		from = from + t;
-	} while(1);
-	printf("Next empty slot: %llu", from);
-	return from;
-}
 
 __host__ __device__ static inline uint64_t find_first_empty_slot(QF *qf, uint64_t from)
 {
@@ -1323,7 +1304,14 @@ __device__ static inline uint64_t next_slot(QF *qf, uint64_t current)
 	return current;
 }
 
-__host__ __device__ static inline int insert1(QF *qf, __uint64_t hash, uint8_t runtime_lock)
+
+//just drop
+__host__ __device__ static inline int insert1(QF *qf, __uint64_t hash, uint8_t runtime_lock){
+
+	return 0;
+}
+
+__host__ __device__ static inline int insert1dud(QF *qf, __uint64_t hash, uint8_t runtime_lock)
 {
 	int ret_distance = 0;
 	uint64_t hash_remainder           = hash & BITMASK(qf->metadata->bits_per_slot);
@@ -2387,7 +2375,7 @@ __host__ __device__ uint8_t encode_kmer_counter(uint8_t* counter){
 
 
 //convert a counter with 
-__host__ __device__ uint8_t encode_chars(char fwd, char back){
+__device__ uint8_t encode_chars(char fwd, char back){
 
 	uint8_t base = 0;
 
@@ -2427,7 +2415,7 @@ __host__ __device__ uint8_t encode_chars(char fwd, char back){
 
 
 //convert a counter with 
-__host__ __device__ void decode_chars(uint8_t stored, char & fwd, char & back){
+__device__ void decode_chars(uint8_t stored, char & fwd, char & back){
 
 
 
@@ -2448,6 +2436,8 @@ __host__ __device__ void decode_chars(uint8_t stored, char & fwd, char & back){
 
 
 }
+
+// __global__ void encode_decode_test()
 
 __host__ __device__ void decode_kmer_counter(uint8_t * counter, uint8_t stored){
 
@@ -2497,11 +2487,31 @@ __device__ bool insert_kmer(QF* qf, uint64_t hash, char forward, char backward, 
 
 	uint64_t bigquery;
 
-	bool boolFound;
 
+	//code to gen hash
+	// uint64_t key = hash;
+
+	// 	if (qf->metadata->hash_mode == QF_HASH_DEFAULT)
+	// 		key = MurmurHash64A(((void *)&key), sizeof(key), qf->metadata->seed) % qf->metadata->range;
+	// 	else if (qf->metadata->hash_mode == QF_HASH_INVERTIBLE)
+	// 		key = hash_64(key, BITMASK(qf->metadata->key_bits));
+
+
+	// key = key % qf->metadata->range;
+
+	// uint64_t alt_hash = (key << qf->metadata->value_bits) | (encoded & BITMASK(qf->metadata->value_bits));
+
+	// uint64_t hash_bucket_index = alt_hash >> qf->metadata->key_remainder_bits;
+
+
+	hash = hash % qf->metadata->range;
 
 	uint64_t hash_bucket_index = hash >> qf->metadata->key_remainder_bits;
 	uint64_t lock_index = hash_bucket_index / NUM_SLOTS_TO_LOCK;
+
+
+	// uint64_t hash_bucket_index = hash >> qf->metadata->key_remainder_bits;
+	// uint64_t lock_index = hash_bucket_index / NUM_SLOTS_TO_LOCK;
 
 	//encode extensions outside of the lock
 
@@ -2509,13 +2519,13 @@ __device__ bool insert_kmer(QF* qf, uint64_t hash, char forward, char backward, 
 	lock_16(qf->runtimedata->locks, lock_index+1);
 
 
-	int found = qf_query(qf, hash, &bigquery, QF_NO_LOCK | QF_KEY_IS_HASH);
+	int found = qf_query(qf, hash, &bigquery, QF_NO_LOCK);
 
 	query = bigquery;
 
 	if (found == 0){
 
-		qf_insert(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH);
+		qf_insert(qf, hash, encoded, 1, QF_NO_LOCK);
 
 
 	} else {
@@ -2529,104 +2539,12 @@ __device__ bool insert_kmer(QF* qf, uint64_t hash, char forward, char backward, 
 	unlock_16(qf->runtimedata->locks, lock_index);
 
 	//obvious cast for clarity
-	return (found == 1);
+	//this does the inverse of found, as if we find the query we return TRUE for insert
+
+	return (found == 0);
 }
 
 
-//given a kmer we want to look for, and an encoded char, insert it and retreive a copy if it exists
-//returns 1 if not found since they won't interfere with any unique combos
-__device__ uint8_t insert_kmer_with_lock(QF* qf, uint64_t hash, uint8_t val){
-
-
-	uint8_t query;
-
-	//ha hire me pls google
-	uint64_t bigquery;
-
-	//uint64_t hash_bucket_index = hash >> qf->metadata->bits_per_slot;
-	uint64_t hash_bucket_index = hash >> qf->metadata->key_remainder_bits;
-	uint64_t lock_index = hash_bucket_index / NUM_SLOTS_TO_LOCK;
-
-	lock_16(qf->runtimedata->locks, lock_index);
-	lock_16(qf->runtimedata->locks, lock_index+1);
-
-
-	//figure out flags here
-	//QF NO lock and QF KEY_IS_HASH
-	int found = qf_query(qf, hash, &bigquery, QF_NO_LOCK | QF_KEY_IS_HASH);
-
-	//implicit casts, data from bigquery should always fit in uint8_t
-	query = bigquery;
-
-	if (found ==0){
-
-		qf_insert(qf, hash, val, 1, QF_NO_LOCK | QF_KEY_IS_HASH);
-		query = 1U;
-
-	}	
-
-
-	
-
-
-	
-
-
-	__threadfence();
-
-	unlock_16(qf->runtimedata->locks, lock_index+1);
-	unlock_16(qf->runtimedata->locks, lock_index);
-
-
-	return query;
-
-
-
-}
-
-//perform a bitwise operatiojn, check if query has been seen at least once already
-//this is indicated by the 2 to last bit being set to 1
-__device__ bool seen_once(uint8_t query){
-
-
-	//looking for bit 0000 0010
-
-	uint8_t lower = (query & (2)) >> 1;
-
-
-
-
-
-	printf("query val %x\n", lower);
-
-
-	//implicit cast 
-	return lower;
-
-
-
-
-}
-
-__device__ uint8_t set_seen(uint8_t query){
-
-
-	return (query | 2);
-
-}
-
-
-
-
-// __global__ void insert_one_kmer_kernel(QF* qf, uint64_t hash, uint8_t val, uint16_t * locks){
-
-// 	uint64_t tid = threadIdx.x + blockIdx.x * blockDim.x;
-
-// 	if (tid != 0) return;
-
-// 	printf("Returned: %x\n", insert_kmer_with_lock(qf, hash, val, locks));
-
-// }
 
 
 __global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems, uint64_t * counter){
@@ -2635,15 +2553,22 @@ __global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * fi
 
 	if (tid >= nitems) return;
 
-	uint8_t one = firsts[tid];
-	uint8_t two = seconds[tid];
+	//uint8_t one = firsts[tid];
+	//uint8_t two = seconds[tid];
+
+	uint8_t one = 1;
+	uint8_t two = 2;
 
 	//if this fails the random gen is messed up
 	char fwd;
 	char back;
 
-	if (insert_kmer(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back)){
+	if (insert_kmer(qf, hashes[tid], kmer_vals[one], kmer_vals[two], fwd, back)){
 
+
+		assert(fwd == kmer_vals[one]);
+
+		assert(back == kmer_vals[two]);
 
 		atomicAdd((unsigned long long *) counter, (unsigned long long) 1);
 
