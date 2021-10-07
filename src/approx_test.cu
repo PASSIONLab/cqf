@@ -28,6 +28,8 @@
 #include "include/gqf.cuh"
 //#include "src/gqf.cu"
 
+#define CYCLES_PER_SECOND 1601000000
+
 #define MAX_VALUE(nbits) ((1ULL << (nbits)) - 1)
 #define BITMASK(nbits)((nbits) == 64 ? 0xffffffffffffffff : MAX_VALUE(nbits))
 
@@ -38,6 +40,8 @@ int main(int argc, char** argv) {
 
 	}
 	QF* qf;
+
+	auto setup_start =  std::chrono::high_resolution_clock::now();
 
 	printf("Start of everything.\n");
 	uint64_t qbits = atoi(argv[1]);
@@ -134,6 +138,19 @@ int main(int argc, char** argv) {
 	counter1[0] = 0;
 	counter2[0] = 0;
 
+
+	uint64_t * max;
+	uint64_t * min;
+	uint64_t * total;
+
+
+	cudaMallocManaged((void **)&max, sizeof(uint64_t));
+	cudaMallocManaged((void **)&min, sizeof(uint64_t));
+	cudaMallocManaged((void **)&total, sizeof(uint64_t));
+
+	max[0] = 0;
+	min[0] = 0;
+	total[0] = 0;;
 	// // vals = (uint64_t *) malloc(nvals * sizeof(uint64_t));
 	// // for (uint64_t i =0l; i< nvals; i++){
 	// // 	vals[i] = i;
@@ -149,17 +166,26 @@ int main(int argc, char** argv) {
 	// fflush(stdout);
 
 
-
 	//remove slots per lock
 
 	cudaDeviceSynchronize();
 
-	auto start = std::chrono::high_resolution_clock::now();
+	auto setup_end =  std::chrono::high_resolution_clock::now();
+
+
+  	std::chrono::duration<double> setup_diff = setup_end-setup_start;
+
+	std::cout << "Setup done in " << setup_diff.count() << " seconds\n";
+
+
+	cudaDeviceSynchronize();
+
+	auto start =  std::chrono::high_resolution_clock::now();
 
 
 
-	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter1);
-	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter2);
+	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter1, max, min, total);
+	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter2, max, min, total);
     
 	
 	cudaDeviceSynchronize();
@@ -185,8 +211,19 @@ int main(int argc, char** argv) {
 
  	printf("Fill ratio: %f %llu %llu\n", 1.0*occupied/found_nslots, occupied, found_nslots);
 
+	printf("Min time: %f %llu/%llu\n", 1.0*min[0]/CYCLES_PER_SECOND, min[0], CYCLES_PER_SECOND);
+	
+	printf("Max time: %f %llu/%llu\n", 1.0*max[0]/CYCLES_PER_SECOND, max[0], CYCLES_PER_SECOND);
+
+	printf("Average time: %f %llu/%llu\n", 1.0*total[0]/(nvals*CYCLES_PER_SECOND), total[0], nvals*CYCLES_PER_SECOND);
+
+
  	cudaFree(counter1);
  	cudaFree(counter2);
+
+ 	cudaFree(max);
+ 	cudaFree(min);
+ 	cudaFree(total);
 
  	cudaFree(dev_hashes);
  	cudaFree(dev_firsts);
