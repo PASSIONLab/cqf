@@ -47,6 +47,13 @@ extern "C" {
 		QF_HASH_NONE
 	};
 
+
+	enum qf_returns {
+		QF_ITEM_INSERTED,
+		QF_ITEM_FOUND,
+		QF_FULL
+	};
+
 	/* The CQF supports concurrent insertions and queries.  Only the
 		 portion of the CQF being examined or modified is locked, so it
 		 supports high throughput even with many threads.

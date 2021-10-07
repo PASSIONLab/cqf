@@ -1581,18 +1581,14 @@ __host__ __device__ static inline int insert1(QF *qf, __uint64_t hash, uint8_t r
 }
 
 
-__host__ __device__ static inline int insert1_if_not_exists(QF *qf, __uint64_t hash, uint8_t runtime_lock)
+__host__ __device__ static inline qf_returns insert1_if_not_exists(QF *qf, __uint64_t hash, uint64_t*value)
 {
 	int ret_distance = 0;
 	uint64_t hash_remainder           = hash & BITMASK(qf->metadata->bits_per_slot);
 	uint64_t hash_bucket_index        = hash >> qf->metadata->bits_per_slot;
 	uint64_t hash_bucket_block_offset = hash_bucket_index % QF_SLOTS_PER_BLOCK;
-	/*
-	if (GET_NO_LOCK(runtime_lock) != QF_NO_LOCK) {
-		if (!qf_lock(qf, hash_bucket_index,  true, runtime_lock))
-			return QF_COULDNT_LOCK;
-	}
-	*/
+
+	
   //printf("In insert1, Index is %llu, block_offset is %llu, remainder is %llu \n", hash_bucket_index, hash_bucket_block_offset, hash_remainder);
 
 	if (is_empty(qf, hash_bucket_index) /* might_be_empty(qf, hash_bucket_index) && runend_index == hash_bucket_index */) {
@@ -1606,6 +1602,15 @@ __host__ __device__ static inline int insert1_if_not_exists(QF *qf, __uint64_t h
 		//modify_metadata(&qf->runtimedata->pc_ndistinct_elts, 1);
 		//modify_metadata(&qf->runtimedata->pc_noccupied_slots, 1);
 		//modify_metadata(&qf->runtimedata->pc_nelts, 1);
+
+		//printf("Inserting empty.\n");
+		#ifdef __CUDA_ARCH__
+		atomicAdd((unsigned long long *)&qf->metadata->noccupied_slots,  1ULL);
+		#else
+			abort();
+		#endif
+
+
 	} else {
 		uint64_t runend_index       = run_end(qf, hash_bucket_index);
 		int operation = 0; /* Insert into empty bucket */
@@ -1621,6 +1626,14 @@ __host__ __device__ static inline int insert1_if_not_exists(QF *qf, __uint64_t h
 			/* Find the counter for this remainder if it exists. */
 			uint64_t current_remainder = get_slot(qf, runstart_index);
 			uint64_t zero_terminator = runstart_index;
+
+			//printf("Current remainder above: %llu\n", current_remainder);
+			*value = current_remainder & BITMASK(qf->metadata->value_bits);
+			//printf("Clipped remainder: %llu\n", *value);
+
+			//return here?
+			//maybe qf_returns::QF_ITEM_FOUND
+			return QF_ITEM_FOUND;
 
 			/* The counter for 0 is special. */
 			if (current_remainder == 0) {
@@ -1783,7 +1796,7 @@ __host__ __device__ static inline int insert1_if_not_exists(QF *qf, __uint64_t h
 			uint64_t empty_slot_index = find_first_empty_slot(qf, runend_index+1);
 			if (empty_slot_index >= qf->metadata->xnslots) {
 				printf("Ran out of space. Total xnslots is %lu, first empty slot is %lu\n", qf->metadata->xnslots, empty_slot_index);
-				return QF_NO_SPACE;
+				return QF_FULL;
 			}
 			shift_remainders(qf, insert_index, empty_slot_index);
 
@@ -1828,12 +1841,10 @@ __host__ __device__ static inline int insert1_if_not_exists(QF *qf, __uint64_t h
 		METADATA_WORD(qf, occupieds, hash_bucket_index) |= 1ULL <<
 			(hash_bucket_block_offset % 64);
 	}
-	/*
-	if (GET_NO_LOCK(runtime_lock) != QF_NO_LOCK) {
-		qf_unlock(qf, hash_bucket_index, true);
-	}
-	*/
-	return ret_distance;
+
+
+	//change here?
+	return QF_ITEM_INSERTED;
 }
 
 
@@ -2356,9 +2367,8 @@ __host__  void qf_set_auto_resize(QF* qf, bool enabled)
 		qf->runtimedata->auto_resize = 0;
 }
 
-
-__host__ __device__ int qf_insert_not_exists(QF *qf, uint64_t key, uint64_t value, uint64_t count, uint8_t
-							flags)
+__host__ __device__ qf_returns qf_insert_not_exists(QF *qf, uint64_t key, uint64_t value, uint64_t count, uint8_t
+							flags, uint64_t * retvalue)
 {
 	// We fill up the CQF up to 95% load factor.
 	// This is a very conservative check.
@@ -2377,8 +2387,8 @@ __host__ __device__ int qf_insert_not_exists(QF *qf, uint64_t key, uint64_t valu
 			return QF_NO_SPACE;
 	}
 	*/
-	if (count == 0)
-		return 0;
+	// if (count == 0)
+	// 	return 0;
 
 	if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
 		if (qf->metadata->hash_mode == QF_HASH_DEFAULT)
@@ -2389,9 +2399,10 @@ __host__ __device__ int qf_insert_not_exists(QF *qf, uint64_t key, uint64_t valu
 
 	uint64_t hash = (key << qf->metadata->value_bits) | (value & BITMASK(qf->metadata->value_bits));
   //printf("Inside insert, new hash is recorded as %llu\n", hash);
-	int ret;
+	qf_returns ret;
+
 	if (count == 1)
-		ret = insert1_if_not_exists(qf, hash, flags);
+		ret = insert1_if_not_exists(qf, hash, retvalue);
 	//for now count is always 1
 	//else
 		//ret = insert(qf, hash, count, flags);
@@ -2875,7 +2886,7 @@ __device__ bool insert_kmer(QF* qf, uint64_t hash, char forward, char backward, 
 }
 
 
-__device__ bool insert_kmer_not_exists(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback){
+__device__ qf_returns insert_kmer_not_exists(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback){
 
 	uint8_t encoded = encode_chars(forward, backward);
 
@@ -2894,20 +2905,30 @@ __device__ bool insert_kmer_not_exists(QF* qf, uint64_t hash, char forward, char
 	lock_16(qf->runtimedata->locks, lock_index);
 	lock_16(qf->runtimedata->locks, lock_index+1);
 
+	//uint64_t query;
 
 	//int found = qf_query(qf, hash, &bigquery, QF_NO_LOCK | QF_KEY_IS_HASH);
-	printf("being inserted/checked: %d\n", encoded);
+	//printf("being inserted/checked: %d\n", encoded);
 
-	qf_insert_not_exists(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH);
-
+	qf_returns ret = qf_insert_not_exists(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH, &bigquery);
 
 
 	__threadfence();
 	unlock_16(qf->runtimedata->locks, lock_index+1);
 	unlock_16(qf->runtimedata->locks, lock_index);
 
+	//cast down
+	query = bigquery;
+
+	if (ret == QF_ITEM_FOUND){
+
+		decode_chars(query, returnedfwd, returnedback);
+
+	}
+	
+
 	//obvious cast for clarity
-	return false;
+	return ret;
 }
 
 
@@ -3021,10 +3042,19 @@ __global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * fi
 	char back;
 
 	//_not_exists
-	if (!insert_kmer(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back)){
+	if (insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND){
 
 
 		atomicAdd((unsigned long long *) counter, (unsigned long long) 1);
+
+} else {
+
+	//else will cause overhead - correctness check
+	//next find must be our previous insert
+	assert (insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND);
+
+	assert(fwd = kmer_vals[one]);
+	assert(back = kmer_vals[two-5]);
 
 }
 

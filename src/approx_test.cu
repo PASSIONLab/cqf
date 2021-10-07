@@ -181,9 +181,6 @@ int main(int argc, char** argv) {
 
 
  	uint64_t found_nslots = host_qf_get_nslots(qf);
-
- 	cudaDeviceSynchronize();
- 	printf("survided\n");
 	uint64_t occupied = host_qf_get_num_occupied_slots(qf);
 
  	printf("Fill ratio: %f %llu %llu\n", 1.0*occupied/found_nslots, occupied, found_nslots);
