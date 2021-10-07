@@ -1586,9 +1586,9 @@ __host__ __device__ static inline qf_returns insert1_if_not_exists(QF *qf, __uin
 
 
 
-	#ifdef __CUDA_ARCH__
-	uint64_t start = clock64();
-	#endif
+	// #ifdef __CUDA_ARCH__
+	// uint64_t start = clock64();
+	// #endif
 
 
 	int ret_distance = 0;
@@ -1642,13 +1642,13 @@ __host__ __device__ static inline qf_returns insert1_if_not_exists(QF *qf, __uin
 			//return here?
 			//maybe qf_returns::QF_ITEM_FOUND
 
-			#ifdef __CUDA_ARCH__
-			uint64_t end = clock64();
-			//end code:
-			atomicMax((unsigned long long int *)max, (unsigned long long int) (end-start));
-			atomicMin((unsigned long long int *)min, (unsigned long long int) (end-start));
-			atomicAdd((unsigned long long int *)total, (unsigned long long int) (end-start));
-			#endif
+			// #ifdef __CUDA_ARCH__
+			// uint64_t end = clock64();
+			// //end code:
+			// atomicMax((unsigned long long int *)max, (unsigned long long int) (end-start));
+			// atomicMin((unsigned long long int *)min, (unsigned long long int) (end-start));
+			// atomicAdd((unsigned long long int *)total, (unsigned long long int) (end-start));
+			// #endif
 
 			return QF_ITEM_FOUND;
 
@@ -1858,13 +1858,13 @@ __host__ __device__ static inline qf_returns insert1_if_not_exists(QF *qf, __uin
 		METADATA_WORD(qf, occupieds, hash_bucket_index) |= 1ULL <<
 			(hash_bucket_block_offset % 64);
 	}
-	#ifdef __CUDA_ARCH__
-	uint64_t end = clock64();
-		//end code:
-	atomicMax((unsigned long long int *)max, (unsigned long long int) (end-start));
-	atomicMin((unsigned long long int *)min, (unsigned long long int) (end-start));
-	atomicAdd((unsigned long long int *)total, (unsigned long long int) (end-start));
-	#endif
+	// #ifdef __CUDA_ARCH__
+	// uint64_t end = clock64();
+	// 	//end code:
+	// atomicMax((unsigned long long int *)max, (unsigned long long int) (end-start));
+	// atomicMin((unsigned long long int *)min, (unsigned long long int) (end-start));
+	// atomicAdd((unsigned long long int *)total, (unsigned long long int) (end-start));
+	// #endif
 	//change here?
 	return QF_ITEM_INSERTED;
 }
@@ -2538,11 +2538,13 @@ GPU Modifications
 
 //locking implementation for the 16 bit locks
 //undefined behavior if you try to unlock a not locked lock
-__device__ void lock_16(uint16_t * lock, uint64_t index){
+__device__ void lock_16(uint16_t * lock, uint64_t index, uint64_t * lock_counters){
 
 
 	uint16_t zero = 0;
 	uint16_t one = 1;
+
+	atomicAdd((unsigned long long int *) lock_counters+index, (unsigned long long int ) 1);
 
 	while (atomicCAS((uint16_t *) &lock[index], zero, one) != zero)
 		;
@@ -2555,7 +2557,7 @@ __device__ void unlock_16(uint16_t * lock, uint64_t index){
 	uint16_t zero = 0;
 	uint16_t one = 1;
 
-	atomicCAS((uint16_t *) &lock[index], one, zero);
+	while (atomicCAS((uint16_t *) &lock[index], one, zero) != one);
 		
 
 }
@@ -2864,7 +2866,51 @@ __host__ __device__ bool is_encodable(uint8_t* counter){
 //finalized version of locking kmer insert
 //uses 10 bits 6 bits remainder/val pairings
 
-__device__ bool insert_kmer(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback){
+// __device__ bool insert_kmer(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback){
+
+// 	uint8_t encoded = encode_chars(forward, backward);
+
+// 	uint8_t query;
+
+// 	uint64_t bigquery;
+
+// 	bool boolFound;
+
+
+// 	uint64_t hash_bucket_index = hash >> qf->metadata->key_remainder_bits;
+// 	uint64_t lock_index = hash_bucket_index / NUM_SLOTS_TO_LOCK;
+
+// 	//encode extensions outside of the lock
+
+// 	lock_16(qf->runtimedata->locks, lock_index);
+// 	lock_16(qf->runtimedata->locks, lock_index+1);
+
+
+// 	int found = qf_query(qf, hash, &bigquery, QF_NO_LOCK | QF_KEY_IS_HASH);
+
+// 	query = bigquery;
+
+// 	if (found == 0){
+
+// 		qf_insert(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH);
+
+
+// 	} else {
+
+// 		decode_chars(query, returnedfwd, returnedback);
+
+// 	}
+
+// 	__threadfence();
+// 	unlock_16(qf->runtimedata->locks, lock_index+1);
+// 	unlock_16(qf->runtimedata->locks, lock_index);
+
+// 	//obvious cast for clarity
+// 	return (found == 0);
+// }
+
+
+__device__ qf_returns insert_kmer_not_exists(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback, uint64_t * max, uint64_t * min, uint64_t * total, uint64_t * lock_counters){
 
 	uint8_t encoded = encode_chars(forward, backward);
 
@@ -2876,57 +2922,23 @@ __device__ bool insert_kmer(QF* qf, uint64_t hash, char forward, char backward, 
 
 
 	uint64_t hash_bucket_index = hash >> qf->metadata->key_remainder_bits;
+	//suint64_t hash_bucket_index = hash >> qf->metadata->bits_per_slot;
 	uint64_t lock_index = hash_bucket_index / NUM_SLOTS_TO_LOCK;
 
 	//encode extensions outside of the lock
 
-	lock_16(qf->runtimedata->locks, lock_index);
-	lock_16(qf->runtimedata->locks, lock_index+1);
+	//lock timing one 
+	uint64_t start = clock64();
 
+	lock_16(qf->runtimedata->locks, lock_index, lock_counters);
+	lock_16(qf->runtimedata->locks, lock_index+1, lock_counters);
 
-	int found = qf_query(qf, hash, &bigquery, QF_NO_LOCK | QF_KEY_IS_HASH);
+	uint64_t end = clock64();
+	//end code:
+	atomicMax((unsigned long long int *)max, (unsigned long long int) (end-start));
+	atomicMin((unsigned long long int *)min, (unsigned long long int) (end-start));
+	atomicAdd((unsigned long long int *)total, (unsigned long long int) (end-start));
 
-	query = bigquery;
-
-	if (found == 0){
-
-		qf_insert(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH);
-
-
-	} else {
-
-		decode_chars(query, returnedfwd, returnedback);
-
-	}
-
-	__threadfence();
-	unlock_16(qf->runtimedata->locks, lock_index+1);
-	unlock_16(qf->runtimedata->locks, lock_index);
-
-	//obvious cast for clarity
-	return (found == 0);
-}
-
-
-__device__ qf_returns insert_kmer_not_exists(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback, uint64_t * max, uint64_t * min, uint64_t * total){
-
-	uint8_t encoded = encode_chars(forward, backward);
-
-	uint8_t query;
-
-	uint64_t bigquery;
-
-	bool boolFound;
-
-
-	uint64_t hash_bucket_index = hash >> qf->metadata->key_remainder_bits;
-	//uint64_t hash_bucket_index = hash >> qf->metadata->bits_per_slot;
-	uint64_t lock_index = hash_bucket_index / NUM_SLOTS_TO_LOCK;
-
-	//encode extensions outside of the lock
-
-	lock_16(qf->runtimedata->locks, lock_index);
-	lock_16(qf->runtimedata->locks, lock_index+1);
 
 	//uint64_t query;
 
@@ -2955,56 +2967,56 @@ __device__ qf_returns insert_kmer_not_exists(QF* qf, uint64_t hash, char forward
 }
 
 
-//given a kmer we want to look for, and an encoded char, insert it and retreive a copy if it exists
-//returns 1 if not found since they won't interfere with any unique combos
-__device__ uint8_t insert_kmer_with_lock(QF* qf, uint64_t hash, uint8_t val){
+// //given a kmer we want to look for, and an encoded char, insert it and retreive a copy if it exists
+// //returns 1 if not found since they won't interfere with any unique combos
+// __device__ uint8_t insert_kmer_with_lock(QF* qf, uint64_t hash, uint8_t val){
 
 
-	uint8_t query;
+// 	uint8_t query;
 
-	//ha hire me pls google
-	uint64_t bigquery;
+// 	//ha hire me pls google
+// 	uint64_t bigquery;
 
-	//uint64_t hash_bucket_index = hash >> qf->metadata->bits_per_slot;
-	uint64_t hash_bucket_index = hash >> qf->metadata->key_remainder_bits;
-	uint64_t lock_index = hash_bucket_index / NUM_SLOTS_TO_LOCK;
+// 	//uint64_t hash_bucket_index = hash >> qf->metadata->bits_per_slot;
+// 	uint64_t hash_bucket_index = hash >> qf->metadata->key_remainder_bits;
+// 	uint64_t lock_index = hash_bucket_index / NUM_SLOTS_TO_LOCK;
 
-	lock_16(qf->runtimedata->locks, lock_index);
-	lock_16(qf->runtimedata->locks, lock_index+1);
-
-
-	//figure out flags here
-	//QF NO lock and QF KEY_IS_HASH
-	int found = qf_query(qf, hash, &bigquery, QF_NO_LOCK | QF_KEY_IS_HASH);
-
-	//implicit casts, data from bigquery should always fit in uint8_t
-	query = bigquery;
-
-	if (found ==0){
-
-		qf_insert(qf, hash, val, 1, QF_NO_LOCK | QF_KEY_IS_HASH);
-		query = 1U;
-
-	}	
+// 	lock_16(qf->runtimedata->locks, lock_index);
+// 	lock_16(qf->runtimedata->locks, lock_index+1);
 
 
-	
+// 	//figure out flags here
+// 	//QF NO lock and QF KEY_IS_HASH
+// 	int found = qf_query(qf, hash, &bigquery, QF_NO_LOCK | QF_KEY_IS_HASH);
+
+// 	//implicit casts, data from bigquery should always fit in uint8_t
+// 	query = bigquery;
+
+// 	if (found ==0){
+
+// 		qf_insert(qf, hash, val, 1, QF_NO_LOCK | QF_KEY_IS_HASH);
+// 		query = 1U;
+
+// 	}	
 
 
 	
 
 
-	__threadfence();
-
-	unlock_16(qf->runtimedata->locks, lock_index+1);
-	unlock_16(qf->runtimedata->locks, lock_index);
+	
 
 
-	return query;
+// 	__threadfence();
+
+// 	unlock_16(qf->runtimedata->locks, lock_index+1);
+// 	unlock_16(qf->runtimedata->locks, lock_index);
+
+
+// 	return query;
 
 
 
-}
+// }
 
 //perform a bitwise operatiojn, check if query has been seen at least once already
 //this is indicated by the 2 to last bit being set to 1
@@ -3051,11 +3063,14 @@ __device__ uint8_t set_seen(uint8_t query){
 // }
 
 
-__global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems, uint64_t * counter, uint64_t * max, uint64_t * min, uint64_t * total){
+__global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems, uint64_t * counter, uint64_t * max, uint64_t * min, uint64_t * total, uint64_t * lock_counters){
 
 	uint64_t tid = threadIdx.x + blockIdx.x * blockDim.x;
 
 	if (tid >= nitems) return;
+
+	//uint64_t start = clock64();
+
 
 	uint8_t one = firsts[tid];
 	uint8_t two = seconds[tid];
@@ -3065,12 +3080,24 @@ __global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * fi
 	char back;
 
 	//_not_exists
-	if (insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back, max, min, total) == QF_ITEM_FOUND){
+	if (insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back, max, min, total, lock_counters) == QF_ITEM_FOUND){
 
 
 		atomicAdd((unsigned long long *) counter, (unsigned long long) 1);
 
 	}
+
+
+
+	// #ifdef __CUDA_ARCH__
+	// uint64_t end = clock64();
+	// //end code:
+	// atomicMax((unsigned long long int *)max, (unsigned long long int) (end-start));
+	// atomicMin((unsigned long long int *)min, (unsigned long long int) (end-start));
+	// atomicAdd((unsigned long long int *)total, (unsigned long long int) (end-start));
+	// #endif
+
+
 // } else {
 
 // 	//else will cause overhead - correctness check
@@ -3307,6 +3334,27 @@ __host__ uint64_t host_qf_get_nslots(const QF *qf) {
 
 	uint64_t toReturn = _metadata->nslots;
 	CUDA_CHECK(cudaFreeHost(_metadata));
+	CUDA_CHECK(cudaFreeHost(host_qf));
+
+	return toReturn;
+}
+
+//need to pull metadata from qf, and nslots from metadata
+__host__ uint64_t host_qf_get_num_locks(const QF *qf) {
+
+	QF * host_qf;
+
+	CUDA_CHECK(cudaMallocHost((void **)&host_qf, sizeof(QF)));
+
+	CUDA_CHECK(cudaMemcpy(host_qf, qf, sizeof(QF), cudaMemcpyDeviceToHost));
+
+	qfruntime * _runtimedata;
+	CUDA_CHECK(cudaMallocHost((void **)&_runtimedata, sizeof(qfruntime)));
+
+	CUDA_CHECK(cudaMemcpy (_runtimedata, host_qf->runtimedata, sizeof(qfruntime), cudaMemcpyDeviceToHost));
+
+	uint64_t toReturn = _runtimedata->num_locks;
+	CUDA_CHECK(cudaFreeHost(_runtimedata));
 	CUDA_CHECK(cudaFreeHost(host_qf));
 
 	return toReturn;

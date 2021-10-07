@@ -148,7 +148,7 @@ int main(int argc, char** argv) {
 	cudaMallocManaged((void **)&min, sizeof(uint64_t));
 	cudaMallocManaged((void **)&total, sizeof(uint64_t));
 
-	max[0] = 0;
+	max[0] = 10000000000;
 	min[0] = 0;
 	total[0] = 0;;
 	// // vals = (uint64_t *) malloc(nvals * sizeof(uint64_t));
@@ -165,6 +165,11 @@ int main(int argc, char** argv) {
 	// printf("GPU launch succeeded\n");
 	// fflush(stdout);
 
+	uint64_t num_locks  = host_qf_get_num_locks(qf);
+
+	uint64_t * lock_counters;
+	cudaMallocManaged((void **)&lock_counters, num_locks*sizeof(uint64_t));
+	cudaMemset(lock_counters, 0, num_locks*sizeof(uint64_t));
 
 	//remove slots per lock
 
@@ -180,12 +185,15 @@ int main(int argc, char** argv) {
 
 	cudaDeviceSynchronize();
 
+
+
+
 	auto start =  std::chrono::high_resolution_clock::now();
 
 
 
-	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter1, max, min, total);
-	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter2, max, min, total);
+	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter1, max, min, total, lock_counters);
+	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter2, max, min, total, lock_counters);
     
 	
 	cudaDeviceSynchronize();
@@ -215,7 +223,22 @@ int main(int argc, char** argv) {
 	
 	printf("Max time: %f %llu/%llu\n", 1.0*max[0]/CYCLES_PER_SECOND, max[0], CYCLES_PER_SECOND);
 
-	printf("Average time: %f %llu/%llu\n", 1.0*total[0]/(nvals*CYCLES_PER_SECOND), total[0], nvals*CYCLES_PER_SECOND);
+	printf("Average time: %f %llu/%llu\n", 1.0*total[0]/(2*nvals*CYCLES_PER_SECOND), total[0], 2*nvals*CYCLES_PER_SECOND);
+
+
+
+	printf("Num locks: %llu\n", num_locks);
+
+	if (num_locks < 250){
+	for(int i =0; i < num_locks; i++){
+		printf("%d: %llu\n", i, lock_counters[i]);
+	}
+	} else {
+
+		for (int i=0; i < 250; i++){
+			printf("%d: %llu\n", i, lock_counters[i]);
+		}
+	}
 
 
  	cudaFree(counter1);

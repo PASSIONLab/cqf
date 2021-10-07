@@ -395,12 +395,13 @@ extern "C" {
 	//__global__ void insert_multi_kmer_kernel_first(QF* qf, uint16_t * locks, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems);
 	//__global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems, uint64_t * counter);
 
-	__global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems, uint64_t * counter, uint64_t * max, uint64_t * min, uint64_t * total);
+	__global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems, uint64_t * counter, uint64_t * max, uint64_t * min, uint64_t * total, uint64_t * lock_counters);
 
 	__host__ uint64_t qf_estimate_memory(int nbits);
 
 	__host__ uint64_t host_qf_get_nslots(const QF *qf);
 	__host__ uint64_t host_qf_get_num_occupied_slots(const QF *qf);
+	__host__ uint64_t host_qf_get_num_locks(const QF *qf);
 
 
 
