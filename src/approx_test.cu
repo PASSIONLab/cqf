@@ -56,7 +56,7 @@ int main(int argc, char** argv) {
 	qf_malloc_device(&qf, qbits);
 
 
-	uint64_t nvals = .95 * (1ULL << qbits);
+	uint64_t nvals = .5 * (1ULL << qbits);
 
 	uint64_t * vals;
 
