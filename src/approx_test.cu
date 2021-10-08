@@ -39,16 +39,12 @@ int main(int argc, char** argv) {
 		exit(1);
 
 	}
-	QF* qf;
 
 	auto setup_start =  std::chrono::high_resolution_clock::now();
 
 	printf("Start of everything.\n");
 	uint64_t qbits = atoi(argv[1]);
-	uint64_t rbits = 8;
-	uint64_t vbits = 8;
-	uint64_t nhashbits = qbits + rbits;
-	uint64_t nslots = (1ULL << qbits);
+
 	// //this can be changed to change the % it fills up
 	// uint64_t nvals = 95 * nslots / 100;
 	// //uint64_t nvals =  nslots/2;
@@ -57,12 +53,13 @@ int main(int argc, char** argv) {
 	// uint64_t key_count = 1;
 	// uint64_t* vals;
 
-	qf_malloc_device(&qf, qbits);
-
 
 	uint64_t nvals = .5 * (1ULL << qbits);
 
 	uint64_t * vals;
+
+
+	uint64_t num_locks = nvals/ (1ULL << 13) + 10;
 
 
 	// /* Initialise the CQF */
@@ -87,45 +84,24 @@ int main(int argc, char** argv) {
 	// //uint64_t* _vals;
 	for (uint64_t i = 0; i < nvals; i++) {
 		//nslots is the range - why are these different?
-		vals[i] = (1 * vals[i]) % (1ULL << qbits);
-	 	vals[i] = hash_64(vals[i], BITMASK(nhashbits));
+		//vals[i] = (1 * vals[i]) % (1ULL << qbits);
+	 	//vals[i] = hash_64(vals[i], BITMASK(nhashbits));
+	 	//preset vals to be the lock they want to grab
+	 	vals[i] = vals[i] % num_locks;
 	}
 
 
-	uint8_t * first;
-	uint8_t * second;
-
-	first = (uint8_t * ) malloc(nvals*sizeof(uint8_t));
-	second = (uint8_t *) malloc(nvals*sizeof(uint8_t));
-
-	RAND_bytes((unsigned char*)first, sizeof(*first) * nvals);
-	RAND_bytes((unsigned char*)second, sizeof(*second) * nvals);
-
-	for (uint64_t i=0; i < nvals; i++){
-
-
-		//0-4
-		first[i] = first[i] % 5;
-
-		//5-9
-		second[i] = second[i] % 5 + 5;
-
-	}
 
 	//copy over
 
 	uint64_t * dev_hashes;
-	uint8_t * dev_firsts;
-	uint8_t * dev_seconds;
+
 
 	cudaMalloc((void ** )&dev_hashes, nvals*sizeof(uint64_t));
-	cudaMalloc((void ** )&dev_firsts, nvals*sizeof(uint8_t));
-	cudaMalloc((void ** )&dev_seconds, nvals*sizeof(uint8_t));
-
+	
 
 	cudaMemcpy(dev_hashes, vals, nvals*sizeof(uint64_t), cudaMemcpyHostToDevice);
-	cudaMemcpy(dev_firsts, first, nvals*sizeof(uint8_t), cudaMemcpyHostToDevice);
-	cudaMemcpy(dev_seconds, second, nvals*sizeof(uint8_t), cudaMemcpyHostToDevice);
+
 
 
 
@@ -165,11 +141,16 @@ int main(int argc, char** argv) {
 	// printf("GPU launch succeeded\n");
 	// fflush(stdout);
 
-	uint64_t num_locks  = host_qf_get_num_locks(qf);
 
-	uint64_t * lock_counters;
-	cudaMallocManaged((void **)&lock_counters, num_locks*sizeof(uint64_t));
-	cudaMemset(lock_counters, 0, num_locks*sizeof(uint64_t));
+
+	uint16_t * global_locks;
+
+	cudaMalloc((void **)&global_locks, num_locks*sizeof(uint16_t));
+	cudaMemset(global_locks, 0, num_locks*sizeof(uint16_t));
+
+
+	//cudaMallocManaged((void **)&lock_counters, num_locks*sizeof(uint64_t));
+	//cudaMemset(lock_counters, 0, num_locks*sizeof(uint64_t));
 
 	//remove slots per lock
 
@@ -192,9 +173,7 @@ int main(int argc, char** argv) {
 
 
 
-	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter1, max, min, total, lock_counters);
-	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter2, max, min, total, lock_counters);
-    
+	test_lock_kernel<<<(nvals -1)/32+1, 32>>>(dev_hashes, nvals, global_locks);
 	
 	cudaDeviceSynchronize();
 
@@ -204,55 +183,55 @@ int main(int argc, char** argv) {
   	std::chrono::duration<double> diff = end-start;
 
 
-  	std::cout << "Sans buffers, Inserted " << nvals << " in " << diff.count() << " seconds\n";
+  	std::cout << "Sans buffers, locked " << nvals << " in " << diff.count() << " seconds\n";
 
- 	printf("Inserts per second: %f\n", nvals/diff.count());
+ 	// printf("Inserts per second: %f\n", nvals/diff.count());
 
- 	printf("Inserts per find: %f\n", 2*nvals/diff.count());
+ 	// printf("Inserts per find: %f\n", 2*nvals/diff.count());
 
- 	printf("Positive rate for first round: %llu/%llu: %f\n", counter1[0], nvals, 1.0*counter1[0]/nvals);
- 	printf("Positive rate for second round: %llu/%llu: %f\n", counter2[0], nvals, 1.0*counter2[0]/nvals);
+ 	// // printf("Positive rate for first round: %llu/%llu: %f\n", counter1[0], nvals, 1.0*counter1[0]/nvals);
+ 	// printf("Positive rate for second round: %llu/%llu: %f\n", counter2[0], nvals, 1.0*counter2[0]/nvals);
 
 
- 	uint64_t found_nslots = host_qf_get_nslots(qf);
-	uint64_t occupied = host_qf_get_num_occupied_slots(qf);
+ 	//uint64_t found_nslots = host_qf_get_nslots(qf);
+	//uint64_t occupied = host_qf_get_num_occupied_slots(qf);
 
- 	printf("Fill ratio: %f %llu %llu\n", 1.0*occupied/found_nslots, occupied, found_nslots);
+ // 	printf("Fill ratio: %f %llu %llu\n", 1.0*occupied/found_nslots, occupied, found_nslots);
 
-	printf("Min time: %f %llu/%llu\n", 1.0*min[0]/CYCLES_PER_SECOND, min[0], CYCLES_PER_SECOND);
+	// printf("Min time: %f %llu/%llu\n", 1.0*min[0]/CYCLES_PER_SECOND, min[0], CYCLES_PER_SECOND);
 	
-	printf("Max time: %f %llu/%llu\n", 1.0*max[0]/CYCLES_PER_SECOND, max[0], CYCLES_PER_SECOND);
+	// printf("Max time: %f %llu/%llu\n", 1.0*max[0]/CYCLES_PER_SECOND, max[0], CYCLES_PER_SECOND);
 
-	printf("Average time: %f %llu/%llu\n", 1.0*total[0]/(2*nvals*CYCLES_PER_SECOND), total[0], 2*nvals*CYCLES_PER_SECOND);
+	// printf("Average time: %f %llu/%llu\n", 1.0*total[0]/(2*nvals*CYCLES_PER_SECOND), total[0], 2*nvals*CYCLES_PER_SECOND);
 
 
 
 	printf("Num locks: %llu\n", num_locks);
 
-	if (num_locks < 250){
-	for(int i =0; i < num_locks; i++){
-		printf("%d: %llu\n", i, lock_counters[i]);
-	}
-	} else {
+	// if (num_locks < 250){
+	// for(int i =0; i < num_locks; i++){
+	// 	printf("%d: %llu\n", i, lock_counters[i]);
+	// }
+	// } else {
 
-		for (int i=0; i < 250; i++){
-			printf("%d: %llu\n", i, lock_counters[i]);
-		}
-	}
+	// 	for (int i=0; i < 250; i++){
+	// 		printf("%d: %llu\n", i, lock_counters[i]);
+	// 	}
+	// }
 
 
- 	cudaFree(counter1);
- 	cudaFree(counter2);
+ 	// cudaFree(counter1);
+ 	// cudaFree(counter2);
 
- 	cudaFree(max);
- 	cudaFree(min);
- 	cudaFree(total);
+ 	// cudaFree(max);
+ 	// cudaFree(min);
+ 	// cudaFree(total);
 
- 	cudaFree(dev_hashes);
- 	cudaFree(dev_firsts);
- 	cudaFree(dev_seconds);
+ 	// cudaFree(dev_hashes);
+ 	// cudaFree(dev_firsts);
+ 	// cudaFree(dev_seconds);
 
- 	qf_destroy_device(qf);
+ 	// qf_destroy_device(qf);
 
 
 	return 0;

@@ -61,6 +61,8 @@
 #define NUM_BUFFERS 10
 #define MAX_BUFFER_SIZE 100
 
+#define CYCLES_TO_WAIT 10000
+
 #define CYCLES_PER_SECOND 1601000000
 
 #define MAX_DEPTH 16
@@ -2149,7 +2151,7 @@ __host__ uint64_t qf_init(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t v
 	//todo: copy this to GPU
 
 
-	qf->runtimedata->locks = (uint16_t *)calloc(qf->runtimedata->num_locks, sizeof(uint16_t));
+	qf->runtimedata->locks = (uint64_t *)calloc(qf->runtimedata->num_locks, sizeof(uint64_t));
 	if (qf->runtimedata->locks == NULL) {
 		perror("Couldn't allocate memory for runtime locks.");
 		exit(EXIT_FAILURE);
@@ -2182,8 +2184,8 @@ __host__ uint64_t qf_use(QF* qf, void* buffer, uint64_t buffer_len)
 	}
 	/* initialize all the locks to 0 */
 	qf->runtimedata->metadata_lock = 0;
-	qf->runtimedata->locks = (uint16_t *)calloc(qf->runtimedata->num_locks,
-																					sizeof(uint16_t));
+	qf->runtimedata->locks = (uint64_t *)calloc(qf->runtimedata->num_locks,
+																					sizeof(uint64_t));
 	if (qf->runtimedata->locks == NULL) {
 		perror("Couldn't allocate memory for runtime locks.");
 		exit(EXIT_FAILURE);
@@ -2535,29 +2537,69 @@ GPU Modifications
 --------------------------*/
 
 
+__device__ void global_lock(int * lock, int max_lock){
 
-//locking implementation for the 16 bit locks
-//undefined behavior if you try to unlock a not locked lock
-__device__ void lock_16(uint16_t * lock, uint64_t index, uint64_t * lock_counters){
+	int one = 1;
 
+	while (atomicAdd((int *)lock, one) >= max_lock){
 
-	uint16_t zero = 0;
-	uint16_t one = 1;
+		atomicAdd(lock, 0-one);
 
-	atomicAdd((unsigned long long int *) lock_counters+index, (unsigned long long int ) 1);
+		
+	}
 
-	while (atomicCAS((uint16_t *) &lock[index], zero, one) != zero)
-		;
 
 }
 
-__device__ void unlock_16(uint16_t * lock, uint64_t index){
+__device__ void global_unlock(int * lock){
+
+	int one = 1;
+
+	atomicAdd(lock, 0-one);
+
+}
 
 
-	uint16_t zero = 0;
-	uint16_t one = 1;
 
-	while (atomicCAS((uint16_t *) &lock[index], one, zero) != one);
+//locking implementation for the 16 bit locks
+//undefined behavior if you try to unlock a not locked lock
+__device__ void lock_16(uint64_t * lock, uint64_t index, uint64_t * lock_counters, uint64_t * max, uint64_t * min, uint64_t * total){
+
+
+	unsigned long long int zero = 0;
+	unsigned long long int one = 1;
+
+	atomicAdd((unsigned long long int *) lock_counters+index, (unsigned long long int ) 1);
+
+	uint64_t result;
+
+	do {
+
+
+	uint64_t start = clock64();
+
+	result = atomicCAS((unsigned long long int *) &lock[index], zero, one);
+	
+
+	uint64_t end = clock64();
+	atomicMax((unsigned long long int *)max, (unsigned long long int) (end-start));
+	atomicMin((unsigned long long int *)min, (unsigned long long int) (end-start));
+	atomicAdd((unsigned long long int *)total, (unsigned long long int) (end-start));
+
+	} while (result != 0);
+
+}
+
+
+	
+
+__device__ void unlock_16(uint64_t * lock, uint64_t index){
+
+
+	unsigned long long int zero = 0;
+	unsigned long long int one = 1;
+
+	while (atomicCAS((unsigned long long int *) &lock[index], one, zero) != one);
 		
 
 }
@@ -2629,11 +2671,11 @@ __host__ void qf_malloc_device(QF** qf, int nbits){
 	qfmetadata* _metadata;
 	qfblock* _blocks;
 
-	uint16_t * dev_locks;
+	uint64_t * dev_locks;
 
-	cudaMalloc((void ** )&dev_locks, host_qf.runtimedata->num_locks * sizeof(uint16_t));
+	cudaMalloc((void ** )&dev_locks, host_qf.runtimedata->num_locks * sizeof(uint64_t));
 
-	cudaMemset(dev_locks, 0, host_qf.runtimedata->num_locks * sizeof(uint16_t));
+	cudaMemset(dev_locks, 0, host_qf.runtimedata->num_locks * sizeof(uint64_t));
 
 	//wipe and replace
 	free(host_qf.runtimedata->locks);
@@ -2910,7 +2952,7 @@ __host__ __device__ bool is_encodable(uint8_t* counter){
 // }
 
 
-__device__ qf_returns insert_kmer_not_exists(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback, uint64_t * max, uint64_t * min, uint64_t * total, uint64_t * lock_counters){
+__device__ qf_returns insert_kmer_not_exists(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback, uint64_t * max, uint64_t * min, uint64_t * total, uint64_t * lock_counters, int * global_locks){
 
 	uint8_t encoded = encode_chars(forward, backward);
 
@@ -2928,17 +2970,16 @@ __device__ qf_returns insert_kmer_not_exists(QF* qf, uint64_t hash, char forward
 	//encode extensions outside of the lock
 
 	//lock timing one 
-	uint64_t start = clock64();
 
-	lock_16(qf->runtimedata->locks, lock_index, lock_counters);
-	lock_16(qf->runtimedata->locks, lock_index+1, lock_counters);
 
-	uint64_t end = clock64();
+	global_lock(global_locks, (uint64_t) qf->runtimedata->num_locks*32);
+	
+
+	lock_16(qf->runtimedata->locks, lock_index, lock_counters, max, min, total);
+	lock_16(qf->runtimedata->locks, lock_index+1, lock_counters, max, min, total);
+
+	
 	//end code:
-	atomicMax((unsigned long long int *)max, (unsigned long long int) (end-start));
-	atomicMin((unsigned long long int *)min, (unsigned long long int) (end-start));
-	atomicAdd((unsigned long long int *)total, (unsigned long long int) (end-start));
-
 
 	//uint64_t query;
 
@@ -2951,6 +2992,8 @@ __device__ qf_returns insert_kmer_not_exists(QF* qf, uint64_t hash, char forward
 	__threadfence();
 	unlock_16(qf->runtimedata->locks, lock_index+1);
 	unlock_16(qf->runtimedata->locks, lock_index);
+
+	global_unlock(global_locks);
 
 	//cast down
 	query = bigquery;
@@ -3062,8 +3105,46 @@ __device__ uint8_t set_seen(uint8_t query){
 
 // }
 
+__device__ void test_lock(uint16_t * locks, uint64_t address){
 
-__global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems, uint64_t * counter, uint64_t * max, uint64_t * min, uint64_t * total, uint64_t * lock_counters){
+
+
+	while (atomicCAS((unsigned short int *) locks + address, (unsigned short int) 0, (unsigned short int ) 1) != 0);
+		
+
+
+}
+
+__device__ void test_unlock(uint16_t * locks, uint64_t address){
+
+
+
+	while (atomicCAS((unsigned short int *) locks + address, (unsigned short int) 1, (unsigned short int ) 0) != 1);
+		
+
+
+}
+
+
+__global__ void test_lock_kernel(uint64_t * hashes, uint64_t nitems, uint16_t * locks){
+
+	uint64_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+
+	if (tid >= nitems) return;
+
+	uint64_t index = hashes[tid];
+
+	test_lock(locks, index);
+	test_lock(locks, index+1);
+
+	test_unlock(locks, index+1);
+	test_unlock(locks, index);
+
+
+}
+
+
+__global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems, uint64_t * counter, uint64_t * max, uint64_t * min, uint64_t * total, uint64_t * lock_counters, int * global_locks){
 
 	uint64_t tid = threadIdx.x + blockIdx.x * blockDim.x;
 
@@ -3080,7 +3161,7 @@ __global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * fi
 	char back;
 
 	//_not_exists
-	if (insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back, max, min, total, lock_counters) == QF_ITEM_FOUND){
+	if (insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back, max, min, total, lock_counters, global_locks) == QF_ITEM_FOUND){
 
 
 		atomicAdd((unsigned long long *) counter, (unsigned long long) 1);
