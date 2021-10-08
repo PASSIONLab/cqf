@@ -183,7 +183,7 @@ int main(int argc, char** argv) {
   	std::chrono::duration<double> diff = end-start;
 
 
-  	std::cout << "Sans buffers, locked " << nvals << " in " << diff.count() << " seconds\n";
+  	std::cout << "Locked " << nvals << " items in " << diff.count() << " seconds\n";
 
  	// printf("Inserts per second: %f\n", nvals/diff.count());
 
