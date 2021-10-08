@@ -35,14 +35,14 @@
 
 int main(int argc, char** argv) {
 	if (argc < 2) {
-		fprintf(stderr, "Please specify the first and second indices to test CQF.\n");
+		fprintf(stderr, "Please specify the number of bits to test on. \n\nExample usage: srun -N 1 -n 1 ./approx_test 24\n\nTesting 24 bits to 26 bits illustrates the issue on Tesla V100s.\n");
 		exit(1);
 
 	}
 
 	auto setup_start =  std::chrono::high_resolution_clock::now();
 
-	printf("Start of everything.\n");
+	printf("Setting up.\n");
 	uint64_t qbits = atoi(argv[1]);
 
 	// //this can be changed to change the % it fills up
@@ -183,7 +183,7 @@ int main(int argc, char** argv) {
   	std::chrono::duration<double> diff = end-start;
 
 
-  	std::cout << "Locked " << nvals << " items in " << diff.count() << " seconds\n";
+  	std::cout << "Locked " << nvals << " times in " << diff.count() << " seconds\n";
 
  	// printf("Inserts per second: %f\n", nvals/diff.count());
 
