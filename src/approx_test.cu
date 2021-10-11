@@ -124,6 +124,12 @@ int main(int argc, char** argv) {
 	cudaMemcpy(dev_seconds, second, nvals*sizeof(uint8_t), cudaMemcpyHostToDevice);
 
 
+	uint8_t * dev_vals;
+	uint8_t * return_vals;
+
+	cudaMalloc((void **)&dev_vals, nvals*sizeof(uint8_t));
+	cudaMalloc((void **)&return_vals, nvals*sizeof(uint8_t));
+
 
 	uint64_t * counter1;
 	uint64_t * counter2;
@@ -148,6 +154,41 @@ int main(int argc, char** argv) {
 	// printf("GPU launch succeeded\n");
 	// fflush(stdout);
 
+	//malloc buffers
+
+	uint64_t * max;
+	uint64_t * min;
+	uint64_t * total;
+
+
+	cudaMallocManaged((void **)&max, sizeof(uint64_t));
+	cudaMallocManaged((void **)&min, sizeof(uint64_t));
+	cudaMallocManaged((void **)&total, sizeof(uint64_t));
+
+	max[0] = 10000000000;
+	min[0] = 0;
+	total[0] = 0;
+
+
+
+	uint64_t num_locks = host_qf_get_num_locks(qf);
+
+
+	//buffers will pull their backing from the data
+	uint64_t * buffers;
+
+	uint64_t * buffer_sizes;
+
+	cudaMalloc((void ** )&buffers, num_locks*sizeof(uint64_t));
+	cudaMalloc((void ** )&buffer_sizes, num_locks*sizeof(uint64_t));
+
+	cudaMemset(buffers, 0, num_locks*sizeof(uint64_t));
+	cudaMemset(buffer_sizes, 0, num_locks*sizeof(uint64_t));
+
+
+
+	encode_extensions<<<(nvals -1) / 32 +1, 32>>>(nvals, dev_firsts, dev_seconds, dev_vals);
+
 
 
 	//remove slots per lock
@@ -157,9 +198,11 @@ int main(int argc, char** argv) {
 	auto start = std::chrono::high_resolution_clock::now();
 
 
+	bulk_insert_no_atomics(qf, nvals, dev_hashes, dev_vals, return_vals, num_locks, QF_NO_LOCK, buffers, buffer_sizes);
 
-	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter1);
-	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter2);
+
+	//insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter1);
+	//insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter2);
     
 	
 	cudaDeviceSynchronize();
@@ -174,10 +217,12 @@ int main(int argc, char** argv) {
 
  	printf("Inserts per second: %f\n", nvals/diff.count());
 
- 	printf("Inserts per find: %f\n", 2*nvals/diff.count());
+ 	//printf("Inserts per find: %f\n", 2*nvals/diff.count());
 
  	printf("Positive rate for first round: %llu/%llu: %f\n", counter1[0], nvals, 1.0*counter1[0]/nvals);
  	printf("Positive rate for second round: %llu/%llu: %f\n", counter2[0], nvals, 1.0*counter2[0]/nvals);
+
+
 
 
  	uint64_t found_nslots = host_qf_get_nslots(qf);

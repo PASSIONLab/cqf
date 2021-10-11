@@ -167,8 +167,6 @@ extern "C" {
 
 	__host__ void bulk_insert_one_hash(QF* qf, uint64_t* keys, uint64_t value, uint64_t count, uint64_t nvals, uint64_t slots_per_lock, uint64_t num_locks, uint8_t flags, uint64_t ** buffers, uint64_t * buffer_backing, volatile uint64_t * buffer_sizes);
 
-	__host__ void bulk_insert_no_atomics(QF* qf, uint64_t* keys, uint64_t value, uint64_t count, uint64_t nvals, uint64_t slots_per_lock, uint64_t num_locks, uint8_t flags, uint64_t ** buffers, volatile uint64_t * buffer_sizes);
-
 
 	__host__ void free_buffers_premalloced(QF *qf, uint64_t**buffers, uint64_t * buffer_backing, volatile uint64_t*buffer_sizes, uint64_t num_buffers);
 
@@ -401,7 +399,12 @@ extern "C" {
 
 	__host__ uint64_t host_qf_get_nslots(const QF *qf);
 	__host__ uint64_t host_qf_get_num_occupied_slots(const QF *qf);
+	__host__ uint64_t host_qf_get_num_locks(const QF *qf);
 
+	__global__ void encode_extensions(uint64_t nitems, uint8_t * forward, uint8_t * backward, uint8_t * encodings);
+
+
+	__host__ void bulk_insert_no_atomics(QF* qf, uint64_t nvals, uint64_t* keys, uint8_t * vals, uint8_t * return_vals, uint64_t num_locks, uint8_t flags, uint64_t * buffers, volatile uint64_t * buffer_sizes);
 
 
 	//get mem usage from dev side QF
