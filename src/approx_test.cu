@@ -145,8 +145,8 @@ int main(int argc, char** argv) {
 
 	uint16_t * global_locks;
 
-	cudaMalloc((void **)&global_locks, num_locks*sizeof(uint16_t));
-	cudaMemset(global_locks, 0, num_locks*sizeof(uint16_t));
+	cudaMalloc((void **)&global_locks, 128*num_locks*sizeof(uint16_t));
+	cudaMemset(global_locks, 0, 128*num_locks*sizeof(uint16_t));
 
 
 	//cudaMallocManaged((void **)&lock_counters, num_locks*sizeof(uint64_t));
@@ -183,7 +183,7 @@ int main(int argc, char** argv) {
   	std::chrono::duration<double> diff = end-start;
 
 
-  	std::cout << "Locked " << nvals << " times in " << diff.count() << " seconds\n";
+  	std::cout << "Locked " << nvals << " times in " << diff.count() << " seconds: " << 1.0*nvals/diff.count() <<"\n";
 
  	// printf("Inserts per second: %f\n", nvals/diff.count());
 

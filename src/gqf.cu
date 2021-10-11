@@ -3109,7 +3109,7 @@ __device__ void test_lock(uint16_t * locks, uint64_t address){
 
 
 
-	while (atomicCAS((unsigned short int *) locks + address, (unsigned short int) 0, (unsigned short int ) 1) != 0);
+	while (atomicCAS((unsigned short int *) locks + 128*address, (unsigned short int) 0, (unsigned short int ) 1) != 0);
 		
 
 
@@ -3119,7 +3119,7 @@ __device__ void test_unlock(uint16_t * locks, uint64_t address){
 
 
 
-	while (atomicCAS((unsigned short int *) locks + address, (unsigned short int) 1, (unsigned short int ) 0) != 1);
+	while (atomicCAS((unsigned short int *) locks + 128*address, (unsigned short int) 1, (unsigned short int ) 0) != 1);
 		
 
 
