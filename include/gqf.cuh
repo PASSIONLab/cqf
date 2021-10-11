@@ -377,7 +377,7 @@ extern "C" {
 
 
 	//device_funcs for interacting with the filter
-	__device__ bool insert_kmer(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback);
+	__device__ qf_returns insert_kmer(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback);
 
 
 	//destroys a filter

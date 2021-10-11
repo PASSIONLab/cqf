@@ -60,6 +60,7 @@
 
 #define NUM_BUFFERS 10
 #define MAX_BUFFER_SIZE 100
+#define LOCK_DIST 64
 
 #define CYCLES_PER_SECOND 1601000000
 
@@ -1612,6 +1613,7 @@ __host__ __device__ static inline qf_returns insert1_if_not_exists(QF *qf, __uin
 
 
 	} else {
+
 		uint64_t runend_index       = run_end(qf, hash_bucket_index);
 		int operation = 0; /* Insert into empty bucket */
 		uint64_t insert_index = runend_index + 1;
@@ -1971,7 +1973,7 @@ __host__ uint64_t qf_init(QF *qf, uint64_t nslots, uint64_t key_bits, uint64_t v
 	qf->metadata->ndistinct_elts = 0;
 	qf->metadata->noccupied_slots = 0;
 
-	qf->runtimedata->num_locks = (qf->metadata->xnslots/NUM_SLOTS_TO_LOCK)+10;
+	qf->runtimedata->num_locks = ((qf->metadata->xnslots/NUM_SLOTS_TO_LOCK)+10)*LOCK_DIST;
 
 	pc_init(&qf->runtimedata->pc_nelts, (int64_t*)&qf->metadata->nelts, 8, 100);
 	pc_init(&qf->runtimedata->pc_ndistinct_elts, (int64_t*)&qf->metadata->ndistinct_elts, 8, 100);
@@ -2379,7 +2381,7 @@ __device__ void lock_16(uint16_t * lock, uint64_t index){
 	uint16_t zero = 0;
 	uint16_t one = 1;
 
-	while (atomicCAS((uint16_t *) &lock[index], zero, one) != zero)
+	while (atomicCAS((uint16_t *) &lock[index*LOCK_DIST], zero, one) != zero)
 		;
 
 }
@@ -2390,8 +2392,26 @@ __device__ void unlock_16(uint16_t * lock, uint64_t index){
 	uint16_t zero = 0;
 	uint16_t one = 1;
 
-	atomicCAS((uint16_t *) &lock[index], one, zero);
+	atomicCAS((uint16_t *) &lock[index*LOCK_DIST], one, zero);
 		
+
+}
+
+
+//lock_16 but built to be included as a piece of a while loop
+// this is more in line with traditional cuda processing, may increase throughput
+
+__device__ bool try_lock_16(uint16_t * lock, uint64_t index){
+
+	uint16_t zero = 0;
+	uint16_t one = 1;
+
+	if (atomicCAS((uint16_t *) &lock[index*LOCK_DIST], zero, one) == zero){
+
+		return true;
+	}
+
+	return false;
 
 }
 
@@ -2699,7 +2719,7 @@ __host__ __device__ bool is_encodable(uint8_t* counter){
 //finalized version of locking kmer insert
 //uses 10 bits 6 bits remainder/val pairings
 
-__device__ bool insert_kmer(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback){
+__device__ qf_returns insert_kmer(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback){
 
 	uint8_t encoded = encode_chars(forward, backward);
 
@@ -2739,7 +2759,11 @@ __device__ bool insert_kmer(QF* qf, uint64_t hash, char forward, char backward, 
 	unlock_16(qf->runtimedata->locks, lock_index);
 
 	//obvious cast for clarity
-	return (found == 0);
+
+	if (found == 1) return QF_ITEM_FOUND;
+
+	return QF_ITEM_INSERTED;
+
 }
 
 
@@ -2786,6 +2810,63 @@ __device__ qf_returns insert_kmer_not_exists(QF* qf, uint64_t hash, char forward
 
 	//obvious cast for clarity
 	return ret;
+}
+
+
+__device__ qf_returns insert_kmer_try_lock(QF* qf, uint64_t hash, char forward, char backward, char & returnedfwd, char & returnedback){
+
+	uint8_t encoded = encode_chars(forward, backward);
+
+	uint8_t query;
+
+	uint64_t bigquery;
+
+	bool boolFound;
+
+
+	uint64_t hash_bucket_index = hash >> qf->metadata->key_remainder_bits;
+	uint64_t lock_index = hash_bucket_index / NUM_SLOTS_TO_LOCK;
+
+	//encode extensions outside of the lock
+
+	while (true){
+
+
+		if (try_lock_16(qf->runtimedata->locks, lock_index)){
+
+
+			//this can also be a regular lock?
+			//if (try_lock_16(qf->runtimedata->locks, lock_index+1)){
+
+
+					lock_16(qf->runtimedata->locks, lock_index+1);
+
+					qf_returns ret = qf_insert_not_exists(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH, &bigquery);
+
+					//extra
+					query = bigquery;
+
+					if (ret == QF_ITEM_FOUND){
+
+						decode_chars(query, returnedfwd, returnedback);
+
+					}
+
+					__threadfence();
+					unlock_16(qf->runtimedata->locks, lock_index+1);
+					unlock_16(qf->runtimedata->locks, lock_index);
+
+					return ret;
+
+
+				//}
+
+
+			unlock_16(qf->runtimedata->locks, lock_index);
+			}
+
+	}
+
 }
 
 
@@ -2898,22 +2979,30 @@ __global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * fi
 	char fwd;
 	char back;
 
+	//insert_kmer(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back);
+
+	//insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back);
+
 	//_not_exists
+	//if (insert_kmer(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND){
 	if (insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND){
 
 
 		atomicAdd((unsigned long long *) counter, (unsigned long long) 1);
 
-} else {
+  } else {
 
-	//else will cause overhead - correctness check
-	//next find must be our previous insert
-	assert (insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND);
+		//else will cause overhead - correctness check
+		//next find must be our previous insert
 
-	assert(fwd = kmer_vals[one]);
-	assert(back = kmer_vals[two-5]);
+		//assert (insert_kmer(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND);
 
-}
+		assert (insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND);
+
+		assert(fwd = kmer_vals[one]);
+		assert(back = kmer_vals[two-5]);
+
+  }
 
 }
 

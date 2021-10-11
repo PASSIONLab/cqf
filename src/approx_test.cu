@@ -198,11 +198,11 @@ int main(int argc, char** argv) {
 	auto start = std::chrono::high_resolution_clock::now();
 
 
-	bulk_insert_no_atomics(qf, nvals, dev_hashes, dev_vals, return_vals, num_locks, QF_NO_LOCK, buffers, buffer_sizes);
+	//bulk_insert_no_atomics(qf, nvals, dev_hashes, dev_vals, return_vals, num_locks, QF_NO_LOCK, buffers, buffer_sizes);
 
 
-	//insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter1);
-	//insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter2);
+	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter1);
+	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter2);
     
 	
 	cudaDeviceSynchronize();
@@ -217,7 +217,7 @@ int main(int argc, char** argv) {
 
  	printf("Inserts per second: %f\n", nvals/diff.count());
 
- 	//printf("Inserts per find: %f\n", 2*nvals/diff.count());
+ 	printf("Inserts per find: %f\n", 2*nvals/diff.count());
 
  	printf("Positive rate for first round: %llu/%llu: %f\n", counter1[0], nvals, 1.0*counter1[0]/nvals);
  	printf("Positive rate for second round: %llu/%llu: %f\n", counter2[0], nvals, 1.0*counter2[0]/nvals);
