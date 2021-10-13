@@ -20,7 +20,8 @@
 #include <unistd.h>
 #include <openssl/rand.h>
 #include <chrono>
-#include<iostream>
+#include <iostream>
+#include <iomanip>
 
 #include "include/gqf_int.cuh"
 #include "include/gqf_file.cuh"
@@ -202,6 +203,10 @@ int main(int argc, char** argv) {
 
 
 	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter1);
+
+	cudaDeviceSynchronize();
+
+	auto midpoint = std::chrono::high_resolution_clock::now();
 	insert_multi_kmer_kernel<<<(nvals-1)/32 +1, 32>>>(qf, dev_hashes, dev_firsts, dev_seconds, nvals, counter2);
     
 	
@@ -212,12 +217,15 @@ int main(int argc, char** argv) {
 
   	std::chrono::duration<double> diff = end-start;
 
+  	std::chrono::duration<double> first_diff = midpoint-start;
+  	std::chrono::duration<double> second_diff = end-midpoint;
+
 
   	std::cout << "Sans buffers, Inserted " << nvals << " in " << diff.count() << " seconds\n";
 
- 	printf("Inserts per second: %f\n", nvals/diff.count());
 
- 	printf("Inserts per find: %f\n", 2*nvals/diff.count());
+  	std::cout << std::setprecision(10) << "First half took " << first_diff.count() << ", " << 1.0*nvals/first_diff.count() << " per second\n";
+  	std::cout << std::setprecision(10) << "Second half took " << second_diff.count() << ", " << 1.0*nvals/second_diff.count() << " per second\n";
 
  	printf("Positive rate for first round: %llu/%llu: %f\n", counter1[0], nvals, 1.0*counter1[0]/nvals);
  	printf("Positive rate for second round: %llu/%llu: %f\n", counter2[0], nvals, 1.0*counter2[0]/nvals);

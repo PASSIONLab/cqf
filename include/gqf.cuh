@@ -51,7 +51,8 @@ extern "C" {
 	enum qf_returns {
 		QF_ITEM_INSERTED,
 		QF_ITEM_FOUND,
-		QF_FULL
+		QF_FULL,
+		QF_NOT_FOUND
 	};
 
 	/* The CQF supports concurrent insertions and queries.  Only the
