@@ -2903,7 +2903,9 @@ __device__ qf_returns insert_kmer(QF* qf, uint64_t hash, char forward, char back
 	bool boolFound;
 
 
-	uint64_t hash_bucket_index = hash >> qf->metadata->key_remainder_bits;
+	//uint64_t hash_bucket_index = hash >> qf->metadata->key_remainder_bits;
+
+	uint64_t hash_bucket_index = hash >> qf->metadata->bits_per_slot;
 	uint64_t lock_index = hash_bucket_index / NUM_SLOTS_TO_LOCK;
 
 	//encode extensions outside of the lock

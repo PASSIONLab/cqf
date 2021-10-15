@@ -231,7 +231,7 @@ int main(int argc, char** argv) {
  	printf("Positive rate for second round: %llu/%llu: %f\n", counter2[0], nvals, 1.0*counter2[0]/nvals);
 
 
-
+ 	printf("Performance per lock: %f\n", 1.0*nvals/(first_diff.count()*num_locks));
 
  	uint64_t found_nslots = host_qf_get_nslots(qf);
 	uint64_t occupied = host_qf_get_num_occupied_slots(qf);
