@@ -1589,6 +1589,10 @@ __host__ __device__ static inline qf_returns insert1_if_not_exists(QF *qf, __uin
 	uint64_t hash_bucket_index        = hash >> qf->metadata->bits_per_slot;
 	uint64_t hash_bucket_block_offset = hash_bucket_index % QF_SLOTS_PER_BLOCK;
 
+
+	//slice off the value off of hash remainder so we can compare
+	uint64_t compare_remainder = hash_remainder >> qf->metadata->value_bits;
+
 	
   //printf("In insert1, Index is %llu, block_offset is %llu, remainder is %llu \n", hash_bucket_index, hash_bucket_block_offset, hash_remainder);
 
@@ -1622,6 +1626,35 @@ __host__ __device__ static inline qf_returns insert1_if_not_exists(QF *qf, __uin
 		/* printf("RUNSTART: %02lx RUNEND: %02lx\n", runstart_index, runend_index); */
 
 		uint64_t runstart_index = hash_bucket_index == 0 ? 0 : run_end(qf, hash_bucket_index- 1) + 1;
+
+
+
+		//need to loop through slots and figure out if our item exists
+		uint64_t current_remainder, current_count, current_end;
+
+		do {
+			current_end = decode_counter(qf, runstart_index, &current_remainder, &current_count);
+			*value = current_remainder & BITMASK(qf->metadata->value_bits);
+			current_remainder = current_remainder >> qf->metadata->value_bits;
+
+			if(current_remainder == compare_remainder){
+				//found!
+				return QF_ITEM_FOUND;
+			}
+
+			if (current_remainder > compare_remainder){
+				//we're inserting into the run
+				
+
+				
+			}
+
+			runstart_index = current_end+1;
+
+		} while (!is_runend(qf, current_end));
+
+
+
 
 		if (is_occupied(qf, hash_bucket_index)) {
 
