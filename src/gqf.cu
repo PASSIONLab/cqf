@@ -1582,6 +1582,164 @@ __host__ __device__ static inline int insert1(QF *qf, __uint64_t hash, uint8_t r
 }
 
 
+__host__ __device__ static inline qf_returns insert1_query(QF *qf, __uint64_t hash, uint8_t * value)
+{
+	int ret_distance = 0;
+	uint64_t hash_remainder           = hash & BITMASK(qf->metadata->bits_per_slot);
+	uint64_t hash_bucket_index        = hash >> qf->metadata->bits_per_slot;
+	uint64_t hash_bucket_block_offset = hash_bucket_index % QF_SLOTS_PER_BLOCK;
+
+
+	uint64_t compare_remainder = hash_remainder >> qf->metadata->value_bits;
+	/*
+	if (GET_NO_LOCK(runtime_lock) != QF_NO_LOCK) {
+		if (!qf_lock(qf, hash_bucket_index,  true, runtime_lock))
+			return QF_COULDNT_LOCK;
+	}
+	*/
+  //printf("In insert1, Index is %llu, block_offset is %llu, remainder is %llu \n", hash_bucket_index, hash_bucket_block_offset, hash_remainder);
+
+
+	//approx filter has estimate of only one insert per item
+
+	// #ifdef __CUDA_ARCH__
+	// 	atomicAdd((unsigned long long *)&qf->metadata->noccupied_slots,  1ULL);
+	// #else
+	// 	abort();
+	// #endif
+
+
+	if (is_empty(qf, hash_bucket_index) /* might_be_empty(qf, hash_bucket_index) && runend_index == hash_bucket_index */) {
+		METADATA_WORD(qf, runends, hash_bucket_index) |= 1ULL <<
+			(hash_bucket_block_offset % 64);
+		set_slot(qf, hash_bucket_index, hash_remainder);
+		METADATA_WORD(qf, occupieds, hash_bucket_index) |= 1ULL <<
+			(hash_bucket_block_offset % 64);
+
+		ret_distance = 0;
+		//modify_metadata(&qf->runtimedata->pc_ndistinct_elts, 1);
+
+
+		//modify_metadata(&qf->runtimedata->pc_noccupied_slots, 1);
+		//modify_metadata(&qf->runtimedata->pc_nelts, 1);
+	} else {
+		uint64_t runend_index       = run_end(qf, hash_bucket_index);
+		int operation = 0; /* Insert into empty bucket */
+		uint64_t insert_index = runend_index + 1;
+		uint64_t new_value = hash_remainder;
+
+		/* printf("RUNSTART: %02lx RUNEND: %02lx\n", runstart_index, runend_index); */
+
+		uint64_t runstart_index = hash_bucket_index == 0 ? 0 : run_end(qf, hash_bucket_index- 1) + 1;
+
+		if (is_occupied(qf, hash_bucket_index)) {
+
+			/* Find the counter for this remainder if it exists. */
+			uint64_t current_remainder = get_slot(qf, runstart_index) >> qf->metadata->value_bits;
+			uint64_t zero_terminator = runstart_index;
+
+			
+
+			/* Skip over counters for other remainders. */
+			while (current_remainder < compare_remainder && runstart_index <=
+						 runend_index) {
+				
+					runstart_index++;
+					current_remainder = get_slot(qf, runstart_index) >> qf->metadata->value_bits;
+				}
+
+			
+
+			/* If this is the first time we've inserted the new remainder,
+				 and it is larger than any remainder in the run. */
+			if (runstart_index > runend_index) {
+				operation = 1;
+				insert_index = runstart_index;
+				new_value = hash_remainder;
+				//modify_metadata(&qf->runtimedata->pc_ndistinct_elts, 1);
+
+				/* This is the first time we're inserting this remainder, but
+					 there are larger remainders already in the run. */
+			} else if (current_remainder != hash_remainder) {
+				operation = 2; /* Inserting */
+				insert_index = runstart_index;
+				new_value = hash_remainder;
+				//modify_metadata(&qf->runtimedata->pc_ndistinct_elts, 1);
+
+				/* Cases below here: we're incrementing the (simple or
+					 extended) counter for this remainder. */
+
+				/* If there's exactly one instance of this remainder. */
+			} else {
+
+
+				//get remainder
+				*value = get_slot(qf, runstart_index) && BITMASK(qf->metadata->value_bits);
+
+				return QF_ITEM_FOUND;
+
+			}
+		} //else {
+			//modify_metadata(&qf->runtimedata->pc_ndistinct_elts, 1);
+		//}
+
+		if (operation >= 0) {
+			uint64_t empty_slot_index = find_first_empty_slot(qf, runend_index+1);
+			if (empty_slot_index >= qf->metadata->xnslots) {
+				printf("Ran out of space. Total xnslots is %lu, first empty slot is %lu\n", qf->metadata->xnslots, empty_slot_index);
+				return QF_FULL;
+			}
+			shift_remainders(qf, insert_index, empty_slot_index);
+
+			set_slot(qf, insert_index, new_value);
+			ret_distance = insert_index - hash_bucket_index;
+
+			shift_runends(qf, insert_index, empty_slot_index-1, 1);
+			switch (operation) {
+				case 0:
+					METADATA_WORD(qf, runends, insert_index)   |= 1ULL << ((insert_index%QF_SLOTS_PER_BLOCK) % 64);
+					break;
+				case 1:
+					METADATA_WORD(qf, runends, insert_index-1) &= ~(1ULL <<	(((insert_index-1) %QF_SLOTS_PER_BLOCK) %64));
+					METADATA_WORD(qf, runends, insert_index)   |= 1ULL << ((insert_index%QF_SLOTS_PER_BLOCK)% 64);
+					break;
+				case 2:
+					METADATA_WORD(qf, runends, insert_index)   &= ~(1ULL <<((insert_index %QF_SLOTS_PER_BLOCK) %64));
+					break;
+				default:
+					printf("Invalid operation %d\n", operation);
+#ifdef __CUDA_ARCH__
+					__threadfence();         // ensure store issued before trap
+					asm("trap;");
+#else
+					abort();
+#endif
+			}
+			/*
+			 * Increment the offset for each block between the hash bucket index
+			 * and block of the empty slot
+			 * */
+			uint64_t i;
+			for (i = hash_bucket_index / QF_SLOTS_PER_BLOCK + 1; i <=
+					 empty_slot_index/QF_SLOTS_PER_BLOCK; i++) {
+				if (get_block(qf, i)->offset < BITMASK(8*sizeof(qf->blocks[0].offset)))
+					get_block(qf, i)->offset++;
+				assert(get_block(qf, i)->offset != 0);
+			}
+			//modify_metadata(&qf->runtimedata->pc_noccupied_slots, 1);
+		}
+		//modify_metadata(&qf->runtimedata->pc_nelts, 1);
+		METADATA_WORD(qf, occupieds, hash_bucket_index) |= 1ULL <<
+			(hash_bucket_block_offset % 64);
+	}
+	/*
+	if (GET_NO_LOCK(runtime_lock) != QF_NO_LOCK) {
+		qf_unlock(qf, hash_bucket_index, true);
+	}
+	*/
+	return QF_ITEM_INSERTED;
+}
+
 __host__ __device__ static inline qf_returns insert1_if_not_exists(QF *qf, __uint64_t hash, uint64_t*value)
 {
 	int ret_distance = 0;
@@ -2357,7 +2515,7 @@ __device__ qf_returns qf_query_lockless(QF *qf, uint64_t key, uint8_t
 
 
 __host__ __device__ qf_returns qf_insert_not_exists(QF *qf, uint64_t key, uint64_t value, uint64_t count, uint8_t
-							flags, uint64_t * retvalue)
+							flags, uint8_t * retvalue)
 {
 	// We fill up the CQF up to 95% load factor.
 	// This is a very conservative check.
@@ -2391,7 +2549,9 @@ __host__ __device__ qf_returns qf_insert_not_exists(QF *qf, uint64_t key, uint64
 	qf_returns ret;
 
 	if (count == 1)
-		ret = insert1_if_not_exists(qf, hash, retvalue);
+		//ret = insert1_if_not_exists(qf, hash, retvalue);
+
+		ret = insert1_query(qf, hash, retvalue);
 	//for now count is always 1
 	//else
 		//ret = insert(qf, hash, count, flags);
@@ -2981,7 +3141,6 @@ __device__ qf_returns insert_kmer_not_exists(QF* qf, uint64_t hash, char forward
 
 	uint8_t query;
 
-	uint64_t bigquery;
 
 	bool boolFound;
 
@@ -3000,15 +3159,13 @@ __device__ qf_returns insert_kmer_not_exists(QF* qf, uint64_t hash, char forward
 	//int found = qf_query(qf, hash, &bigquery, QF_NO_LOCK | QF_KEY_IS_HASH);
 	//printf("being inserted/checked: %d\n", encoded);
 
-	qf_returns ret = qf_insert_not_exists(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH, &bigquery);
+	qf_returns ret = qf_insert_not_exists(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH, &query);
 
 
 	__threadfence();
 	unlock_16(qf->runtimedata->locks, lock_index+1);
 	unlock_16(qf->runtimedata->locks, lock_index);
 
-	//cast down
-	query = bigquery;
 
 	if (ret == QF_ITEM_FOUND){
 
@@ -3050,10 +3207,9 @@ __device__ qf_returns insert_kmer_try_lock(QF* qf, uint64_t hash, char forward, 
 
 					lock_16(qf->runtimedata->locks, lock_index+1);
 
-					qf_returns ret = qf_insert_not_exists(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH, &bigquery);
+					qf_returns ret = qf_insert_not_exists(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH, &query);
 
-					//extra
-					query = bigquery;
+				
 
 					if (ret == QF_ITEM_FOUND){
 
@@ -3097,7 +3253,7 @@ __device__ qf_returns insert_kmer_lockless_query(QF* qf, uint64_t hash, char for
 
 	if (query_ret == QF_ITEM_FOUND){
 
-		query == bigquery;
+		query = bigquery;
 		decode_chars(query, returnedfwd, returnedback);
 
 		return query_ret;
@@ -3124,11 +3280,10 @@ __device__ qf_returns insert_kmer_lockless_query(QF* qf, uint64_t hash, char for
 
 					lock_16(qf->runtimedata->locks, lock_index+1);
 
-					qf_returns ret = qf_insert_not_exists(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH, &bigquery);
+					qf_returns ret = qf_insert_not_exists(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH, &query);
 
 					//extra
-					query = bigquery;
-
+					
 					if (ret == QF_ITEM_FOUND){
 
 						decode_chars(query, returnedfwd, returnedback);
@@ -3181,7 +3336,7 @@ __device__ qf_returns insert_kmer_rw_lock(QF* qf, uint64_t hash, char forward, c
 
 	if (query_ret == QF_ITEM_FOUND){
 
-		query == bigquery;
+		query = bigquery;
 		decode_chars(query, returnedfwd, returnedback);
 
 		return query_ret;
@@ -3204,10 +3359,9 @@ __device__ qf_returns insert_kmer_rw_lock(QF* qf, uint64_t hash, char forward, c
 
 	write_lock_16(qf->runtimedata->locks, lock_index+1);
 
-	qf_returns ret = qf_insert_not_exists(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH, &bigquery);
+	qf_returns ret = qf_insert_not_exists(qf, hash, encoded, 1, QF_NO_LOCK | QF_KEY_IS_HASH, &query);
 
 					//extra
-	query = bigquery;
 
 	if (ret == QF_ITEM_FOUND){
 
@@ -3346,7 +3500,7 @@ __global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * fi
 	//quick fix
 	//hashes[tid] = hashes[tid] % qf->metadata->range;
 
-	if (insert_kmer_rw_lock(qf, hashes[tid],  kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND){
+	if (insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND){
 
 
 		atomicAdd((unsigned long long *) counter, (unsigned long long) 1);
@@ -3358,7 +3512,7 @@ __global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * fi
 
 		//assert (insert_kmer(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND);
 
-		assert (insert_kmer_rw_lock(qf, hashes[tid],  kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND);
+		assert (insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND);
 
 		assert(fwd = kmer_vals[one]);
 		assert(back = kmer_vals[two-5]);
@@ -3531,11 +3685,11 @@ __global__ void insert_from_buffers_hashed(QF* qf, uint64_t num_buffers, uint64_
 		uint64_t index = buffers[idx] +i;
 
 
-		uint64_t bigquery;
+		uint8_t query;
 
-		qf_returns ret = qf_insert_not_exists(qf, buffer_backing[index], val_backing[index], 1, QF_NO_LOCK | QF_KEY_IS_HASH, &bigquery);
+		qf_returns ret = qf_insert_not_exists(qf, buffer_backing[index], val_backing[index], 1, QF_NO_LOCK | QF_KEY_IS_HASH, &query);
 		
-		return_val_backing[index] = bigquery;
+		return_val_backing[index] = query;
 
 		//internal threadfence. Bad? actually seems to be fine
 		//__threadfence();
