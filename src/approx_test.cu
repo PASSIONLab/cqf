@@ -174,24 +174,6 @@ int main(int argc, char** argv) {
 
 	uint64_t num_locks = host_qf_get_num_locks(qf);
 
-
-	//buffers will pull their backing from the data
-	uint64_t * buffers;
-
-	uint64_t * buffer_sizes;
-
-	cudaMalloc((void ** )&buffers, num_locks*sizeof(uint64_t));
-	cudaMalloc((void ** )&buffer_sizes, num_locks*sizeof(uint64_t));
-
-	cudaMemset(buffers, 0, num_locks*sizeof(uint64_t));
-	cudaMemset(buffer_sizes, 0, num_locks*sizeof(uint64_t));
-
-
-
-	encode_extensions<<<(nvals -1) / 32 +1, 32>>>(nvals, dev_firsts, dev_seconds, dev_vals);
-
-
-
 	//remove slots per lock
 
 	cudaDeviceSynchronize();
