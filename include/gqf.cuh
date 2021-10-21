@@ -394,7 +394,8 @@ extern "C" {
 	//__global__ void insert_multi_kmer_kernel_first(QF* qf, uint16_t * locks, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems);
 	__global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems, uint64_t * counter);
 
-	
+	__global__ void insert_multi_kmer_kernel_one_thread(QF* qf, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems, uint64_t * counter);
+
 
 	__host__ uint64_t qf_estimate_memory(int nbits);
 

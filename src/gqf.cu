@@ -1660,7 +1660,7 @@ __host__ __device__ static inline qf_returns insert1_query(QF *qf, __uint64_t ha
 
 				/* This is the first time we're inserting this remainder, but
 					 there are larger remainders already in the run. */
-			} else if (current_remainder != hash_remainder) {
+			} else if (current_remainder != compare_remainder) {
 				operation = 2; /* Inserting */
 				insert_index = runstart_index;
 				new_value = hash_remainder;
@@ -3518,6 +3518,61 @@ __global__ void insert_multi_kmer_kernel(QF* qf, uint64_t * hashes, uint8_t * fi
 		assert(back = kmer_vals[two-5]);
 
   }
+
+}
+
+
+__global__ void insert_multi_kmer_kernel_one_thread(QF* qf, uint64_t * hashes, uint8_t * firsts, uint8_t * seconds, uint64_t nitems, uint64_t * counter){
+
+	uint64_t check = threadIdx.x + blockIdx.x * blockDim.x;
+
+	if (check != 0) return;
+
+
+	for (uint64_t tid =0; tid< nitems; tid++){
+		
+
+		uint8_t one = firsts[tid];
+		uint8_t two = seconds[tid];
+
+		//if this fails the random gen is messed up
+		char fwd;
+		char back;
+
+		//insert_kmer(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back);
+
+		//insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back);
+
+		//_not_exists
+		//if (insert_kmer(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND){
+
+		//insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND
+
+		//insert_kmer_lockless_query(qf, hashes[tid],  kmer_vals[one], kmer_vals[two-5], fwd, back)
+		
+		//quick fix
+		//hashes[tid] = hashes[tid] % qf->metadata->range;
+
+		if (insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND){
+
+
+			atomicAdd((unsigned long long *) counter, (unsigned long long) 1);
+
+	  } else {
+
+			//else will cause overhead - correctness check
+			//next find must be our previous insert
+
+			//assert (insert_kmer(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND);
+
+			assert (insert_kmer_not_exists(qf, hashes[tid], kmer_vals[one], kmer_vals[two-5], fwd, back) == QF_ITEM_FOUND);
+
+			assert(fwd = kmer_vals[one]);
+			assert(back = kmer_vals[two-5]);
+
+	  }
+
+	}
 
 }
 
