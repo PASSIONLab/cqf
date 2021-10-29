@@ -52,7 +52,7 @@ extern inline int gqf_init(uint64_t nbits, uint64_t num_hash_bits, uint64_t buf_
 	num_slots = nslots;
 	total_items = 0;
 	//n_inserts = 0;
-	qf_malloc(&host_qf, nslots, num_hash_bits, 0, QF_HASH_INVERTIBLE, false, 0);
+	qf_malloc(&host_qf, nslots, num_hash_bits, 0, QF_HASH_DEFAULT, false, 0);
 	qf_set_auto_resize(&host_qf, false);
 
 	qfruntime* _runtime;
@@ -193,7 +193,7 @@ extern inline int gqf_bulk_insert(uint64_t * vals, uint64_t count)
 	//if (ratio > 15) ratio = 15;
 	//printf("Dividing ratio %d\n", ratio);
 
-	cudaMemset((uint64_t *) buffer_sizes, 0, num_locks*sizeof(uint64_t));
+	//cudaMemset((uint64_t *) buffer_sizes, 0, num_locks*sizeof(uint64_t));
 	
   //cudaMemset((uint64_t *) buffer_sizes, 0, ratio*num_locks*sizeof(uint64_t));
 	//bulk_insert_bucketing_buffer_provided(g_quotient_filter, vals, 0, 1, count, NUM_SLOTS_TO_LOCK, num_locks, QF_NO_LOCK, buffers, buffer_backing, buffer_sizes);

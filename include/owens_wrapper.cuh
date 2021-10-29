@@ -147,7 +147,9 @@ extern inline int owens_bulk_insert(uint64_t * vals, uint64_t count)
 	//__host__ float insertGPU(countingQuotientFilterGPU cqf, int numValues, unsigned int* d_insertValues, int* d_returnValues);
 
 	//will this work?
-	owens_filter::bulkBuildParallelMerging(owens_cqf_gpu, count, owens_inserts, false);
+
+
+	owens_filter::bulkBuildSegmentedLayouts(owens_cqf_gpu, count, owens_inserts, false);
 	//owens_filter::insert(owens_cqf_gpu, count, owens_inserts);
 	//insertGPU(owens_cqf_gpu, count, owens_inserts, owens_returns);
 	

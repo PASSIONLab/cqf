@@ -2805,13 +2805,17 @@ __global__ void hash_all(QF* qf, uint64_t* vals, uint64_t* hashes, uint64_t nval
   if (GET_KEY_HASH(flags) != QF_KEY_IS_HASH) {
 		if (qf->metadata->hash_mode == QF_HASH_DEFAULT)
 			key = MurmurHash64A(((void *)&key), sizeof(key),
-													qf->metadata->seed) % qf->metadata->range;
+													qf->metadata->seed); // % qf->metadata->range;
 		else if (qf->metadata->hash_mode == QF_HASH_INVERTIBLE)
 			key = hash_64(key, BITMASK(qf->metadata->key_bits));
 	}
 
-	uint64_t hash = (key << qf->metadata->value_bits) | (value & BITMASK(qf->metadata->value_bits));
+	//uint64_t hash = (key << qf->metadata->value_bits) | (value & BITMASK(qf->metadata->value_bits));
   
+	//assert((key & (qf->metadata->range -1)) == key % qf->metadata->range );
+
+	uint64_t hash = key & (qf->metadata->range -1);
+
   hashes[idx] = hash;
 
 	return;
